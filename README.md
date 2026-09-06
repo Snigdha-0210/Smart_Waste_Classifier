@@ -46,6 +46,7 @@ Improper waste segregation is one of the leading drivers of municipal landfill o
 - 🔬 **Transfer Learning vs. Baseline Comparison**: Includes a custom 3-block 2D-CNN baseline (59.77%) and demonstrates a **+33.57% accuracy improvement** through transfer learning.
 - 🌐 **Interactive Streamlit Web Dashboard**: Upload any waste image to receive instant classification, confidence scores, probability distributions, and tailored disposal action items.
 - ⚡ **Dual-Mode CLI Inference Engine (`predict.py`)**: Predict waste categories directly from local image files or direct image URLs from the web.
+- 🎯 **Real-time Object Detection Prototype (`detect_waste.py`)**: Integrated YOLOv11 detector for localized object bounding boxes.
 - 📊 **Robust MLOps & Diagnostics**: Built-in scripts for learning rate scheduling (`ReduceLROnPlateau`), error analysis, confusion matrix plotting, and dataset inspection.
 - 🚀 **Hardware Acceleration**: Automatic GPU detection (CUDA) with fallback to CPU execution.
 
@@ -76,6 +77,7 @@ flowchart TD
     subgraph Deployment["4. Inference & User Interfaces"]
         BestWeights --> StreamlitApp["Streamlit Web App (app.py)\n• Image Upload\n• Top-3 Probabilities\n• Disposal Guidance"]
         BestWeights --> CLIPredict["CLI & URL Predictor (predict.py)\n• Local Files\n• Remote Image URLs"]
+        BestWeights --> YOLODetect["YOLO Detector (detect_waste.py)\n• Bounding Box Detection"]
     end
 ```
 
@@ -289,6 +291,7 @@ Smart_Waste_Classifier/
 ├── evaluate_resnet.py                 # ResNet-18 quantitative test evaluation
 ├── evaluate.py                        # Baseline CNN test evaluation
 ├── predict.py                         # Standalone CLI & URL inference engine
+├── detect_waste.py                    # YOLOv11 real-time multi-object detection script
 ├── confusion_matrix_resnet.py         # Confusion matrix and classification report generator
 ├── error_analysis.py                  # High-confidence error analysis & visualization script
 ├── inspect_dataset.py                 # Dataset split and class distribution inspection
@@ -297,19 +300,21 @@ Smart_Waste_Classifier/
 │
 ├── waste_resnet18_best.pth            # Trained ResNet-18 weights (93.34% Test Accuracy)
 ├── waste_classifier.pth               # Trained Baseline CNN weights (59.77% Test Accuracy)
+├── yolo11n.pt                         # YOLOv11 neural network weights
 │
 ├── dataset_samples.png                # Dataset sample preview image
 ├── dataset_samples_multiple.png       # Comprehensive multi-class sample grid
 ├── confusion_matrix_resnet.png        # ResNet-18 confusion matrix plot
 ├── confusion_matrix.png               # Baseline CNN confusion matrix plot
-└── resnet_error_analysis.png          # ResNet-18 error analysis visual grid
+├── resnet_error_analysis.png          # ResNet-18 error analysis visual grid
+└── detected_waste.jpg                 # YOLO object detection output preview
 ```
 
 ---
 
 ## 🔮 Future Roadmap
 
-- [ ] **YOLO Real-Time Detection**: Incorporate YOLOv8/v11 for bounding box detection of multiple mixed items in a single frame.
+- [x] **YOLO Object Detection Prototype**: Added YOLOv11 object detection testing pipeline (`detect_waste.py`).
 - [ ] **Edge Deployment**: Optimize models with TensorRT / ONNX Runtime for deployment on embedded devices (e.g., Raspberry Pi, NVIDIA Jetson) in smart bin hardware.
 - [ ] **Mobile Application**: Build a Flutter / React Native camera companion app for on-the-go waste sorting.
 - [ ] **Expanded Class Taxonomy**: Include E-waste (electronic waste), hazardous chemicals, and battery categories with dedicated disposal workflows.
