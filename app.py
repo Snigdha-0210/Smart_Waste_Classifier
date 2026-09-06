@@ -2,30 +2,26 @@ import streamlit as st
 import torch
 import torch.nn.functional as F
 from torchvision import transforms
-from PIL import Image
+from PIL import Image, ImageEnhance
+import numpy as np
 from datetime import datetime
-import json
-import os
-import pandas as pd
-
 
 from model_resnet import WasteResNet
 
 
 # ============================================================
-# PAGE CONFIGURATION
+# 1. PAGE CONFIGURATION
 # ============================================================
 
 st.set_page_config(
     page_title="Smart Waste Classifier",
     page_icon="♻️",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 
 # ============================================================
-# CONSTANTS
+# 2. CLASS NAMES
 # ============================================================
 
 CLASS_NAMES = [
@@ -37,127 +33,29 @@ CLASS_NAMES = [
     "Plastic"
 ]
 
-MODEL_PATH = "waste_resnet18_best.pth"
-HISTORY_FILE = "prediction_history.json"
+
+# ============================================================
+# 3. OOD CONFIGURATION
+# ============================================================
+#
+# These are intentionally conservative.
+#
+# The model was trained ONLY on the six classes above.
+# It should therefore not blindly classify every image
+# on the internet as one of these classes.
+#
+# This is OOD GUARD V1.
+# Later we can replace this with a trained OOD detector.
+# ============================================================
+
+MIN_CONFIDENCE = 0.70
+MIN_MARGIN = 0.18
+MAX_NORMALIZED_ENTROPY = 0.72
+MIN_AUGMENTATION_AGREEMENT = 0.60
 
 
 # ============================================================
-# WASTE INFORMATION
-# ============================================================
-
-WASTE_INFO = {
-
-    "Cardboard": {
-        "bin": "Paper / Dry Waste",
-        "icon": "📦",
-        "description": (
-            "Cardboard is generally recyclable when it is clean "
-            "and dry."
-        ),
-        "recommendation": (
-            "Flatten the cardboard and place it in the dry "
-            "recyclable waste stream."
-        ),
-        "tips": [
-            "Remove plastic packaging where possible.",
-            "Keep cardboard dry.",
-            "Flatten large boxes before disposal."
-        ]
-    },
-
-    "Food Organics": {
-        "bin": "Organic / Compost Waste",
-        "icon": "🍎",
-        "description": (
-            "Food and other organic waste can often be "
-            "processed through composting or organic-waste systems."
-        ),
-        "recommendation": (
-            "Place suitable food waste in the organic/compost "
-            "waste stream."
-        ),
-        "tips": [
-            "Separate food waste from recyclable materials.",
-            "Use a compost bin where available.",
-            "Avoid mixing plastic with organic waste."
-        ]
-    },
-
-    "Glass": {
-        "bin": "Glass Recycling",
-        "icon": "🍾",
-        "description": (
-            "Glass containers are commonly recyclable, although "
-            "local collection rules can differ."
-        ),
-        "recommendation": (
-            "Place recyclable glass in the designated glass "
-            "recycling stream."
-        ),
-        "tips": [
-            "Empty containers before disposal.",
-            "Follow your local glass-recycling rules.",
-            "Handle broken glass carefully."
-        ]
-    },
-
-    "Metal": {
-        "bin": "Metal / Dry Recyclable Waste",
-        "icon": "🥫",
-        "description": (
-            "Many metal containers and objects can be recovered "
-            "through recycling."
-        ),
-        "recommendation": (
-            "Place recyclable metal in the appropriate dry "
-            "recyclable or metal collection stream."
-        ),
-        "tips": [
-            "Empty containers before recycling.",
-            "Keep metal separate from organic waste.",
-            "Follow local recycling requirements."
-        ]
-    },
-
-    "Paper": {
-        "bin": "Paper / Dry Waste",
-        "icon": "📄",
-        "description": (
-            "Clean and dry paper is commonly recyclable."
-        ),
-        "recommendation": (
-            "Place clean paper in the paper or dry-recyclable "
-            "waste stream."
-        ),
-        "tips": [
-            "Keep paper dry.",
-            "Remove non-paper attachments when practical.",
-            "Avoid contaminating recyclable paper with food."
-        ]
-    },
-
-    "Plastic": {
-        "bin": "Plastic / Dry Recyclable Waste",
-        "icon": "🧴",
-        "description": (
-            "Many plastic products can be recycled, but accepted "
-            "plastic types vary by local waste-management systems."
-        ),
-        "recommendation": (
-            "Check the local recycling rules for the specific "
-            "plastic item before disposal."
-        ),
-        "tips": [
-            "Empty containers before disposal.",
-            "Check the recycling symbol where available.",
-            "Do not assume every type of plastic is recyclable."
-        ]
-    }
-}
-
-
-# ============================================================
-# DEVICE
+# 4. DEVICE
 # ============================================================
 
 device = torch.device(
@@ -166,19 +64,17 @@ device = torch.device(
 
 
 # ============================================================
-# LOAD MODEL
+# 5. LOAD MODEL
 # ============================================================
 
 @st.cache_resource
 def load_model():
 
-    model = WasteResNet(
-        num_classes=6
-    )
+    model = WasteResNet(num_classes=6)
 
     model.load_state_dict(
         torch.load(
-            MODEL_PATH,
+            "waste_resnet18_best.pth",
             map_location=device
         )
     )
@@ -194,212 +90,352 @@ model = load_model()
 
 
 # ============================================================
-# IMAGE TRANSFORMATION
+# 6. BASE IMAGE TRANSFORMATION
 # ============================================================
 
-transform = transforms.Compose([
-
-    transforms.Resize(
-        (224, 224)
-    ),
+base_transform = transforms.Compose([
+    transforms.Resize((224, 224)),
 
     transforms.ToTensor(),
 
     transforms.Normalize(
-        mean=[
-            0.485,
-            0.456,
-            0.406
-        ],
-
-        std=[
-            0.229,
-            0.224,
-            0.225
-        ]
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
     )
 ])
 
 
 # ============================================================
-# HISTORY FUNCTIONS
+# 7. OOD AUGMENTATIONS
 # ============================================================
 
-def load_history():
+augmentation_transforms = [
 
-    if not os.path.exists(
-        HISTORY_FILE
-    ):
-        return []
+    transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ]),
 
-    try:
+    transforms.Compose([
+        transforms.Resize((256, 256)),
+        transforms.CenterCrop((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ]),
 
-        with open(
-            HISTORY_FILE,
-            "r",
-            encoding="utf-8"
-        ) as file:
+    transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.RandomHorizontalFlip(p=1.0),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ]),
 
-            return json.load(file)
+    transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ColorJitter(
+            brightness=0.15,
+            contrast=0.15,
+            saturation=0.15
+        ),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ]),
 
-    except Exception:
+    transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.RandomCrop(
+            224,
+            padding=12
+        ),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ])
+]
 
-        return []
+
+# ============================================================
+# 8. BASIC PREDICTION FUNCTION
+# ============================================================
+
+def predict_tensor(image_tensor):
+
+    image_tensor = image_tensor.unsqueeze(0).to(device)
+
+    with torch.no_grad():
+
+        outputs = model(image_tensor)
+
+        probabilities = F.softmax(
+            outputs,
+            dim=1
+        )
+
+    return probabilities[0]
 
 
-def save_history(history):
+# ============================================================
+# 9. CALCULATE ENTROPY
+# ============================================================
 
-    with open(
-        HISTORY_FILE,
-        "w",
-        encoding="utf-8"
-    ) as file:
+def calculate_normalized_entropy(probabilities):
 
-        json.dump(
-            history,
-            file,
-            indent=4
+    probabilities = probabilities + 1e-10
+
+    entropy = -torch.sum(
+        probabilities * torch.log(probabilities)
+    )
+
+    max_entropy = np.log(len(CLASS_NAMES))
+
+    normalized_entropy = (
+        entropy.item() / max_entropy
+    )
+
+    return normalized_entropy
+
+
+# ============================================================
+# 10. OOD ANALYSIS
+# ============================================================
+
+def analyze_ood(image):
+
+    predictions = []
+
+    probability_vectors = []
+
+    # --------------------------------------------------------
+    # Run multiple views of the image
+    # --------------------------------------------------------
+
+    for transform in augmentation_transforms:
+
+        tensor = transform(image)
+
+        probabilities = predict_tensor(tensor)
+
+        probability_vectors.append(
+            probabilities.detach().cpu().numpy()
+        )
+
+        predictions.append(
+            torch.argmax(probabilities).item()
         )
 
 
-def add_prediction_to_history(
-    predicted_class,
-    confidence
-):
+    # --------------------------------------------------------
+    # Original prediction
+    # --------------------------------------------------------
 
-    history = load_history()
+    original_probabilities = torch.tensor(
+        probability_vectors[0]
+    )
 
-    prediction = {
+    sorted_probabilities, sorted_indices = torch.sort(
+        original_probabilities,
+        descending=True
+    )
 
-        "timestamp":
-            datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S"
-            ),
+    top1_index = sorted_indices[0].item()
+    top2_index = sorted_indices[1].item()
 
-        "class":
-            predicted_class,
+    top1_confidence = sorted_probabilities[0].item()
+    top2_confidence = sorted_probabilities[1].item()
 
-        "confidence":
-            round(
-                confidence,
-                2
-            )
+    margin = (
+        top1_confidence -
+        top2_confidence
+    )
+
+
+    # --------------------------------------------------------
+    # Entropy
+    # --------------------------------------------------------
+
+    entropy = calculate_normalized_entropy(
+        original_probabilities
+    )
+
+
+    # --------------------------------------------------------
+    # Augmentation agreement
+    # --------------------------------------------------------
+
+    agreement = (
+        predictions.count(top1_index)
+        / len(predictions)
+    )
+
+
+    # --------------------------------------------------------
+    # Individual signals
+    # --------------------------------------------------------
+
+    confidence_ok = (
+        top1_confidence >= MIN_CONFIDENCE
+    )
+
+    margin_ok = (
+        margin >= MIN_MARGIN
+    )
+
+    entropy_ok = (
+        entropy <= MAX_NORMALIZED_ENTROPY
+    )
+
+    agreement_ok = (
+        agreement >= MIN_AUGMENTATION_AGREEMENT
+    )
+
+
+    # --------------------------------------------------------
+    # OOD decision
+    # --------------------------------------------------------
+    #
+    # We don't rely on ONE signal.
+    #
+    # If several signals are suspicious, reject.
+    # --------------------------------------------------------
+
+    failed_checks = 0
+
+    if not confidence_ok:
+        failed_checks += 1
+
+    if not margin_ok:
+        failed_checks += 1
+
+    if not entropy_ok:
+        failed_checks += 1
+
+    if not agreement_ok:
+        failed_checks += 1
+
+
+    if failed_checks >= 2:
+
+        status = "unsupported"
+
+    elif failed_checks == 1:
+
+        status = "uncertain"
+
+    else:
+
+        status = "supported"
+
+
+    return {
+        "predicted_index": top1_index,
+        "predicted_class": CLASS_NAMES[top1_index],
+        "confidence": top1_confidence,
+        "second_class": CLASS_NAMES[top2_index],
+        "second_confidence": top2_confidence,
+        "margin": margin,
+        "entropy": entropy,
+        "agreement": agreement,
+        "status": status,
+        "confidence_ok": confidence_ok,
+        "margin_ok": margin_ok,
+        "entropy_ok": entropy_ok,
+        "agreement_ok": agreement_ok,
+        "probabilities": original_probabilities.numpy()
     }
 
-    history.insert(
-        0,
-        prediction
-    )
 
-    # Keep latest 100 predictions
-    history = history[:100]
+# ============================================================
+# 11. SESSION HISTORY
+# ============================================================
 
-    save_history(
-        history
-    )
+if "history" not in st.session_state:
+
+    st.session_state.history = []
 
 
 # ============================================================
-# SESSION STATE
+# 12. SIDEBAR NAVIGATION
 # ============================================================
 
-if "current_prediction" not in st.session_state:
-
-    st.session_state.current_prediction = None
-
-
-if "current_image" not in st.session_state:
-
-    st.session_state.current_image = None
-
-
-if "current_probabilities" not in st.session_state:
-
-    st.session_state.current_probabilities = None
-
-
-# ============================================================
-# SIDEBAR
-# ============================================================
-
-st.sidebar.title(
-    "♻️ Smart Waste"
-)
-
-st.sidebar.caption(
-    "AI-powered waste classification"
-)
-
-st.sidebar.divider()
-
+st.sidebar.title("♻️ Smart Waste")
 
 page = st.sidebar.radio(
     "Navigation",
-
     [
-        "🏠 Classifier",
-        "📊 Dashboard",
-        "🕒 History",
-        "ℹ️ About Model"
+        "Classifier",
+        "Dashboard",
+        "History",
+        "About Model"
     ]
 )
 
 
-st.sidebar.divider()
-
-
-st.sidebar.write(
-    "**Model:** ResNet18"
-)
-
-st.sidebar.write(
-    "**Test Accuracy:** 93.34%"
-)
-
-st.sidebar.write(
-    "**Classes:** 6"
-)
-
-st.sidebar.write(
-    "**Input:** 224 × 224 RGB"
-)
-
-st.sidebar.write(
-    "**Device:** " + str(device)
-)
-
-
 # ============================================================
-# CLASSIFIER PAGE
+# 13. CLASSIFIER PAGE
 # ============================================================
 
-if page == "🏠 Classifier":
+if page == "Classifier":
 
-    st.title(
-        "♻️ Smart Waste Classifier"
-    )
+    st.title("♻️ Smart Waste Classifier")
 
     st.write(
-        "Upload an image of waste and our trained "
-        "ResNet18 model will classify it into one of "
-        "six waste categories."
+        "Upload a waste image and the trained ResNet18 model "
+        "will classify it into one of six supported waste categories."
     )
 
-    st.divider()
+    st.info(
+        "The OOD Guard checks whether the image looks sufficiently "
+        "similar and stable for the six waste categories the model knows."
+    )
 
 
     # --------------------------------------------------------
-    # UPLOAD
+    # Model information
+    # --------------------------------------------------------
+
+    with st.expander("Model Information"):
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.write("**Model**")
+            st.write("ResNet18")
+
+        with col2:
+            st.write("**Classes**")
+            st.write("6")
+
+        with col3:
+            st.write("**Test Accuracy**")
+            st.write("93.34%")
+
+        with col4:
+            st.write("**Device**")
+            st.write(str(device))
+
+
+    # --------------------------------------------------------
+    # Upload
     # --------------------------------------------------------
 
     uploaded_file = st.file_uploader(
         "Upload a waste image",
-
-        type=[
-            "jpg",
-            "jpeg",
-            "png"
-        ]
+        type=["jpg", "jpeg", "png"]
     )
 
 
@@ -407,18 +443,16 @@ if page == "🏠 Classifier":
 
         image = Image.open(
             uploaded_file
-        ).convert(
-            "RGB"
-        )
+        ).convert("RGB")
 
 
         # ----------------------------------------------------
-        # DISPLAY IMAGE
+        # Display image
         # ----------------------------------------------------
 
         st.image(
             image,
-            caption="Uploaded Waste Image",
+            caption="Uploaded Image",
             width="stretch"
         )
 
@@ -426,418 +460,338 @@ if page == "🏠 Classifier":
 
 
         # ----------------------------------------------------
-        # CLASSIFY BUTTON
+        # Analyze
         # ----------------------------------------------------
 
-        if st.button(
-            "🔍 Classify Waste",
-            type="primary",
-            width="stretch"
+        with st.spinner(
+            "Analyzing image and checking OOD signals..."
         ):
 
-            with st.spinner(
-                "Analyzing image with ResNet18..."
-            ):
-
-                image_tensor = transform(
-                    image
-                )
-
-                image_tensor = (
-                    image_tensor
-                    .unsqueeze(0)
-                    .to(device)
-                )
+            result = analyze_ood(image)
 
 
-                with torch.no_grad():
+        predicted_class = result["predicted_class"]
 
-                    outputs = model(
-                        image_tensor
-                    )
+        confidence = (
+            result["confidence"] * 100
+        )
 
-                    probabilities = F.softmax(
-                        outputs,
-                        dim=1
-                    )
+        second_class = result["second_class"]
 
-                    confidence, predicted = torch.max(
-                        probabilities,
-                        dim=1
-                    )
+        second_confidence = (
+            result["second_confidence"] * 100
+        )
 
+        margin = (
+            result["margin"] * 100
+        )
 
-                predicted_class = CLASS_NAMES[
-                    predicted.item()
-                ]
+        entropy = (
+            result["entropy"] * 100
+        )
 
-                confidence_value = (
-                    confidence.item() * 100
-                )
-
-
-                probability_values = (
-                    probabilities[0]
-                    .cpu()
-                    .numpy()
-                )
+        agreement = (
+            result["agreement"] * 100
+        )
 
 
-            # Save current result
-            st.session_state.current_prediction = {
+        # ====================================================
+        # RESULT
+        # ====================================================
 
-                "class":
-                    predicted_class,
-
-                "confidence":
-                    confidence_value
-            }
+        st.subheader("Prediction")
 
 
-            st.session_state.current_image = image
+        # ----------------------------------------------------
+        # SUPPORTED
+        # ----------------------------------------------------
 
-
-            st.session_state.current_probabilities = (
-                probability_values
-            )
-
-
-            # Save to history
-            add_prediction_to_history(
-                predicted_class,
-                confidence_value
-            )
-
+        if result["status"] == "supported":
 
             st.success(
-                "Prediction completed successfully!"
+                f"♻️ {predicted_class}"
+            )
+
+            st.metric(
+                "Confidence",
+                f"{confidence:.2f}%"
+            )
+
+            st.caption(
+                "The model's prediction was stable across "
+                "multiple image views."
+            )
+
+
+        # ----------------------------------------------------
+        # UNCERTAIN
+        # ----------------------------------------------------
+
+        elif result["status"] == "uncertain":
+
+            st.warning(
+                f"⚠️ Possibly {predicted_class}"
+            )
+
+            st.metric(
+                "Model Confidence",
+                f"{confidence:.2f}%"
+            )
+
+            st.write(
+                "The model produced a prediction, but one of "
+                "the OOD checks was suspicious."
+            )
+
+            st.info(
+                "Please verify the material manually."
+            )
+
+
+        # ----------------------------------------------------
+        # UNSUPPORTED
+        # ----------------------------------------------------
+
+        else:
+
+            st.error(
+                "⚠️ Unsupported or mixed waste image"
+            )
+
+            st.write(
+                f"The model's strongest guess was "
+                f"**{predicted_class} ({confidence:.2f}%)**, "
+                f"but the image did not pass the OOD checks."
+            )
+
+            st.info(
+                "This image may contain mixed waste, an "
+                "unsupported material such as e-waste, or a "
+                "scene that differs significantly from the "
+                "training data."
             )
 
 
         # ====================================================
-        # DISPLAY RESULT
+        # OOD DETAILS
         # ====================================================
 
-        if (
-            st.session_state.current_prediction
-            is not None
-        ):
+        with st.expander("🔍 OOD Analysis Details"):
 
-            result = (
-                st.session_state.current_prediction
+            st.write(
+                "**These checks are diagnostic signals, "
+                "not probabilities that the image is OOD.**"
             )
 
-            predicted_class = result[
-                "class"
-            ]
-
-            confidence_value = result[
-                "confidence"
-            ]
-
-
-            st.divider()
-
-            st.header(
-                "Prediction Result"
-            )
-
-
-            # ------------------------------------------------
-            # MAIN RESULT
-            # ------------------------------------------------
-
-            col1, col2 = st.columns(
-                2
-            )
-
+            col1, col2 = st.columns(2)
 
             with col1:
 
-                st.success(
-                    f"♻️ {predicted_class}"
+                st.write(
+                    f"**Top prediction:** "
+                    f"{predicted_class}"
                 )
 
+                st.write(
+                    f"**Top confidence:** "
+                    f"{confidence:.2f}%"
+                )
+
+                st.write(
+                    f"**Second prediction:** "
+                    f"{second_class}"
+                )
+
+                st.write(
+                    f"**Second confidence:** "
+                    f"{second_confidence:.2f}%"
+                )
 
             with col2:
 
-                st.metric(
-                    "Confidence",
-                    f"{confidence_value:.2f}%"
+                st.write(
+                    f"**Top-2 margin:** "
+                    f"{margin:.2f}%"
+                )
+
+                st.write(
+                    f"**Normalized entropy:** "
+                    f"{entropy:.2f}%"
+                )
+
+                st.write(
+                    f"**Augmentation agreement:** "
+                    f"{agreement:.0f}%"
                 )
 
 
-            # ------------------------------------------------
-            # CONFIDENCE STATUS
-            # ------------------------------------------------
+            st.divider()
 
-            if confidence_value >= 90:
+            st.write("### OOD Checks")
 
+            if result["confidence_ok"]:
                 st.success(
-                    "🟢 Very high confidence prediction"
+                    "✅ Confidence check passed"
                 )
-
-            elif confidence_value >= 70:
-
-                st.warning(
-                    "🟡 Moderate confidence prediction"
-                )
-
             else:
-
-                st.error(
-                    "🔴 Low confidence prediction. "
-                    "Consider using a clearer image."
+                st.warning(
+                    "⚠️ Confidence check failed"
                 )
 
 
-            # =================================================
-            # WASTE MANAGEMENT RECOMMENDATION
-            # =================================================
+            if result["margin_ok"]:
+                st.success(
+                    "✅ Top-2 separation check passed"
+                )
+            else:
+                st.warning(
+                    "⚠️ Top-2 separation check failed"
+                )
 
-            info = WASTE_INFO[
-                predicted_class
-            ]
+
+            if result["entropy_ok"]:
+                st.success(
+                    "✅ Entropy check passed"
+                )
+            else:
+                st.warning(
+                    "⚠️ Entropy check failed"
+                )
 
 
-            st.divider()
+            if result["agreement_ok"]:
+                st.success(
+                    "✅ Augmentation consistency check passed"
+                )
+            else:
+                st.warning(
+                    "⚠️ Augmentation consistency check failed"
+                )
 
-            st.header(
-                "♻️ What should you do with it?"
+
+        # ====================================================
+        # CLASS PROBABILITIES
+        # ====================================================
+
+        st.subheader("Class Probabilities")
+
+        probability_values = result["probabilities"]
+
+
+        for class_name, probability in zip(
+            CLASS_NAMES,
+            probability_values
+        ):
+
+            percentage = (
+                probability * 100
+            )
+
+            st.write(
+                f"**{class_name}** — "
+                f"{percentage:.2f}%"
+            )
+
+            st.progress(
+                float(probability)
             )
 
 
-            recommendation_col1, recommendation_col2 = (
-                st.columns(
-                    [1, 2]
-                )
+        # ====================================================
+        # SAVE TO HISTORY
+        # ====================================================
+
+        history_entry = {
+            "time": datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+
+            "filename": uploaded_file.name,
+
+            "prediction": predicted_class,
+
+            "confidence": confidence,
+
+            "status": result["status"]
+        }
+
+
+        # Avoid repeatedly adding the exact same upload
+        if (
+            len(st.session_state.history) == 0
+            or st.session_state.history[-1]["filename"]
+            != uploaded_file.name
+            or st.session_state.history[-1]["time"]
+            != history_entry["time"]
+        ):
+
+            st.session_state.history.append(
+                history_entry
             )
-
-
-            with recommendation_col1:
-
-                st.markdown(
-                    f"""
-                    <div style="
-                        padding:20px;
-                        border-radius:15px;
-                        border:1px solid #ddd;
-                        text-align:center;
-                    ">
-
-                    <div style="font-size:50px;">
-                    {info["icon"]}
-                    </div>
-
-                    <h3>{predicted_class}</h3>
-
-                    <p>
-                    <b>Suggested stream:</b><br>
-                    {info["bin"]}
-                    </p>
-
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-
-            with recommendation_col2:
-
-                st.subheader(
-                    "Recommended Action"
-                )
-
-                st.write(
-                    info["recommendation"]
-                )
-
-                st.write(
-                    info["description"]
-                )
-
-
-            st.subheader(
-                "💡 Disposal Tips"
-            )
-
-
-            for tip in info["tips"]:
-
-                st.write(
-                    f"• {tip}"
-                )
-
-
-            st.caption(
-                "Waste-management rules vary by location. "
-                "Always follow your local authority's disposal "
-                "and recycling guidelines."
-            )
-
-
-            # =================================================
-            # CLASS PROBABILITIES
-            # =================================================
-
-            st.divider()
-
-            st.subheader(
-                "📊 Class Probabilities"
-            )
-
-
-            probability_values = (
-                st.session_state
-                .current_probabilities
-            )
-
-
-            probability_data = []
-
-
-            for class_name, probability in zip(
-                CLASS_NAMES,
-                probability_values
-            ):
-
-                percentage = (
-                    float(probability) * 100
-                )
-
-                probability_data.append({
-
-                    "Class":
-                        class_name,
-
-                    "Probability":
-                        percentage
-                })
-
-
-            probability_data.sort(
-                key=lambda x:
-                    x["Probability"],
-
-                reverse=True
-            )
-
-
-            for item in probability_data:
-
-                st.write(
-                    f"**{item['Class']}** — "
-                    f"{item['Probability']:.2f}%"
-                )
-
-                st.progress(
-                    min(
-                        float(
-                            item["Probability"]
-                            / 100
-                        ),
-                        1.0
-                    )
-                )
 
 
 # ============================================================
-# DASHBOARD PAGE
+# 14. DASHBOARD
 # ============================================================
 
-elif page == "📊 Dashboard":
+elif page == "Dashboard":
 
-    st.title(
-        "📊 Waste Classification Dashboard"
-    )
+    st.title("📊 Dashboard")
 
-    st.write(
-        "Overview of your AI-powered waste "
-        "classification activity."
-    )
-
-    st.divider()
-
-
-    history = load_history()
+    history = st.session_state.history
 
 
     if len(history) == 0:
 
         st.info(
-            "No predictions have been recorded yet. "
-            "Go to the Classifier and analyze some "
-            "waste images."
+            "No predictions yet. Go to Classifier and "
+            "upload some images."
         )
-
 
     else:
 
-        df = pd.DataFrame(
-            history
+        total_predictions = len(history)
+
+        supported_count = sum(
+            x["status"] == "supported"
+            for x in history
+        )
+
+        uncertain_count = sum(
+            x["status"] == "uncertain"
+            for x in history
+        )
+
+        unsupported_count = sum(
+            x["status"] == "unsupported"
+            for x in history
         )
 
 
-        # ----------------------------------------------------
-        # METRICS
-        # ----------------------------------------------------
-
-        total_predictions = len(
-            df
-        )
-
-
-        average_confidence = df[
-            "confidence"
-        ].mean()
-
-
-        most_common_class = df[
-            "class"
-        ].mode()[0]
-
-
-        high_confidence = len(
-            df[
-                df["confidence"] >= 90
-            ]
-        )
-
-
-        col1, col2, col3, col4 = (
-            st.columns(4)
-        )
-
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-
             st.metric(
                 "Total Predictions",
                 total_predictions
             )
 
-
         with col2:
-
             st.metric(
-                "Average Confidence",
-                f"{average_confidence:.2f}%"
+                "Supported",
+                supported_count
             )
-
 
         with col3:
-
             st.metric(
-                "Most Detected",
-                most_common_class
+                "Uncertain",
+                uncertain_count
             )
-
 
         with col4:
-
             st.metric(
-                "High Confidence",
-                high_confidence
+                "Unsupported",
+                unsupported_count
             )
 
 
@@ -845,126 +799,64 @@ elif page == "📊 Dashboard":
 
 
         # ----------------------------------------------------
-        # WASTE DISTRIBUTION
+        # Category counts
         # ----------------------------------------------------
 
         st.subheader(
-            "♻️ Waste Type Distribution"
+            "Predictions by Category"
         )
 
+        category_counts = {}
 
-        class_counts = (
-            df["class"]
-            .value_counts()
-            .reindex(
-                CLASS_NAMES,
-                fill_value=0
+        for entry in history:
+
+            category = entry["prediction"]
+
+            category_counts[category] = (
+                category_counts.get(category, 0) + 1
             )
-        )
 
 
-        chart_df = pd.DataFrame({
+        for category in CLASS_NAMES:
 
-            "Waste Type":
-                class_counts.index,
-
-            "Predictions":
-                class_counts.values
-
-        })
-
-
-        st.bar_chart(
-            chart_df.set_index(
-                "Waste Type"
+            count = category_counts.get(
+                category,
+                0
             )
-        )
+
+            st.write(
+                f"**{category}** — {count}"
+            )
 
 
         st.divider()
 
 
         # ----------------------------------------------------
-        # CONFIDENCE HISTORY
+        # Average confidence
         # ----------------------------------------------------
 
-        st.subheader(
-            "🎯 Confidence Over Time"
-        )
+        average_confidence = sum(
+            x["confidence"]
+            for x in history
+        ) / len(history)
 
 
-        confidence_df = df[
-            [
-                "timestamp",
-                "confidence"
-            ]
-        ].copy()
-
-
-        confidence_df = (
-            confidence_df
-            .set_index(
-                "timestamp"
-            )
-        )
-
-
-        st.line_chart(
-            confidence_df
-        )
-
-
-        st.divider()
-
-
-        # ----------------------------------------------------
-        # RECENT PREDICTIONS
-        # ----------------------------------------------------
-
-        st.subheader(
-            "🕒 Recent Predictions"
-        )
-
-
-        recent_df = df.head(
-            10
-        ).copy()
-
-
-        recent_df.columns = [
-
-            "Time",
-            "Waste Type",
-            "Confidence"
-
-        ]
-
-
-        st.dataframe(
-            recent_df,
-            width="stretch",
-            hide_index=True
+        st.metric(
+            "Average Model Confidence",
+            f"{average_confidence:.2f}%"
         )
 
 
 # ============================================================
-# HISTORY PAGE
+# 15. HISTORY
 # ============================================================
 
-elif page == "🕒 History":
+elif page == "History":
 
-    st.title(
-        "🕒 Prediction History"
-    )
+    st.title("🕘 Prediction History")
 
-    st.write(
-        "View previous waste classifications."
-    )
-
-    st.divider()
-
-
-    history = load_history()
+    history = st.session_state.history
 
 
     if len(history) == 0:
@@ -973,243 +865,117 @@ elif page == "🕒 History":
             "No prediction history yet."
         )
 
-
     else:
 
-        df = pd.DataFrame(
-            history
-        )
+        for index, entry in enumerate(
+            reversed(history)
+        ):
+
+            status = entry["status"]
+
+            if status == "supported":
+                icon = "🟢"
+
+            elif status == "uncertain":
+                icon = "🟡"
+
+            else:
+                icon = "🔴"
 
 
-        # ----------------------------------------------------
-        # FILTER
-        # ----------------------------------------------------
+            st.write(
+                f"{icon} **{entry['prediction']}** — "
+                f"{entry['confidence']:.2f}%"
+            )
 
-        selected_class = st.selectbox(
+            st.caption(
+                f"{entry['filename']} • "
+                f"{entry['time']} • "
+                f"{status.upper()}"
+            )
 
-            "Filter by waste type",
-
-            [
-                "All"
-            ] + CLASS_NAMES
-        )
-
-
-        if selected_class != "All":
-
-            filtered_df = df[
-                df["class"]
-                == selected_class
-            ]
-
-        else:
-
-            filtered_df = df
-
-
-        st.write(
-            f"Showing {len(filtered_df)} prediction(s)"
-        )
-
-
-        st.dataframe(
-            filtered_df,
-            width="stretch",
-            hide_index=True
-        )
-
-
-        st.divider()
-
-
-        # ----------------------------------------------------
-        # CLEAR HISTORY
-        # ----------------------------------------------------
-
-        st.subheader(
-            "History Management"
-        )
+            st.divider()
 
 
         if st.button(
-            "🗑️ Clear Prediction History"
+            "Clear History"
         ):
 
-            save_history(
-                []
-            )
-
-
-            st.success(
-                "Prediction history cleared."
-            )
-
+            st.session_state.history = []
 
             st.rerun()
 
 
 # ============================================================
-# ABOUT MODEL PAGE
+# 16. ABOUT MODEL
 # ============================================================
 
-elif page == "ℹ️ About Model":
+elif page == "About Model":
 
-    st.title(
-        "ℹ️ About the Model"
-    )
-
+    st.title("🧠 About the Model")
 
     st.write(
-        "Smart Waste Classifier uses a trained "
-        "ResNet18 deep learning model to classify "
-        "images into six waste categories."
+        "This application uses a ResNet18 image classification "
+        "model trained to recognize six waste categories."
     )
 
-
-    st.divider()
-
-
-    # --------------------------------------------------------
-    # MODEL INFORMATION
-    # --------------------------------------------------------
-
-    col1, col2 = st.columns(
-        2
-    )
-
-
-    with col1:
-
-        st.subheader(
-            "🧠 Model Architecture"
-        )
-
-        st.write(
-            "**Architecture:** ResNet18"
-        )
-
-        st.write(
-            "**Input:** 224 × 224 RGB image"
-        )
-
-        st.write(
-            "**Output:** 6 classes"
-        )
-
-        st.write(
-            "**Training:** Transfer learning"
-        )
-
-
-    with col2:
-
-        st.subheader(
-            "📈 Performance"
-        )
-
-        st.metric(
-            "Test Accuracy",
-            "93.34%"
-        )
-
-        st.write(
-            "**Test images:** 706"
-        )
-
-        st.write(
-            "**Correct:** 659"
-        )
-
-        st.write(
-            "**Incorrect:** 47"
-        )
-
-
-    st.divider()
-
-
-    # --------------------------------------------------------
-    # CLASSES
-    # --------------------------------------------------------
 
     st.subheader(
-        "♻️ Supported Waste Categories"
+        "Supported Categories"
     )
 
-
-    for class_name in CLASS_NAMES:
-
-        info = WASTE_INFO[
-            class_name
-        ]
+    for category in CLASS_NAMES:
 
         st.write(
-            f"{info['icon']} **{class_name}**"
+            f"♻️ {category}"
         )
 
-
-    st.divider()
-
-
-    # --------------------------------------------------------
-    # MODEL DETAILS
-    # --------------------------------------------------------
 
     st.subheader(
-        "⚙️ System Configuration"
+        "Model Performance"
+    )
+
+    st.write(
+        "**Test accuracy:** 93.34%"
+    )
+
+    st.write(
+        "**Test images:** 706"
+    )
+
+    st.write(
+        "**Correct predictions:** 659"
+    )
+
+    st.write(
+        "**Incorrect predictions:** 47"
     )
 
 
-    config_col1, config_col2 = (
-        st.columns(2)
+    st.subheader(
+        "Why OOD Detection?"
+    )
+
+    st.write(
+        "A classifier trained on six classes will normally "
+        "choose one of those six classes even when the uploaded "
+        "image does not belong to any of them."
+    )
+
+    st.write(
+        "For example, electronic waste or a photograph of a "
+        "large mixed garbage dump may not correspond to one "
+        "of the six training categories."
+    )
+
+    st.write(
+        "The OOD Guard attempts to detect these situations "
+        "instead of blindly trusting the highest softmax score."
     )
 
 
-    with config_col1:
-
-        st.write(
-            "**Image Size:** 224 × 224"
-        )
-
-        st.write(
-            "**Channels:** RGB / 3"
-        )
-
-        st.write(
-            "**Normalization:** ImageNet"
-        )
-
-
-    with config_col2:
-
-        st.write(
-            "**Device:** " + str(device)
-        )
-
-        if torch.cuda.is_available():
-
-            st.write(
-                "**GPU:** "
-                + torch.cuda.get_device_name(0)
-            )
-
-        else:
-
-            st.write(
-                "**GPU:** Not available"
-            )
-
-
-    st.divider()
-
-
-    st.info(
-        "The model's 93.34% test accuracy was measured "
-        "on the held-out test set of 706 images."
-    )
-
-
-    st.caption(
-        "Smart Waste Classifier • ResNet18 • "
-        "Machine Learning Project"
+    st.warning(
+        "OOD Guard V1 is a heuristic system. A future version "
+        "should be calibrated using real out-of-distribution "
+        "images and a dedicated OOD detector."
     )
