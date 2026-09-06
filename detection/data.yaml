@@ -1,0 +1,13 @@
+path: C:/Users/misty/OneDrive/Documents/Smart_Waste_Classifier/detection/dataset
+
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: Cardboard
+  1: Food Organics
+  2: Glass
+  3: Metal
+  4: Paper
+  5: Plastic

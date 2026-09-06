@@ -46,7 +46,8 @@ Improper waste segregation is one of the leading drivers of municipal landfill o
 - 🔬 **Transfer Learning vs. Baseline Comparison**: Includes a custom 3-block 2D-CNN baseline (59.77%) and demonstrates a **+33.57% accuracy improvement** through transfer learning.
 - 🌐 **Interactive Streamlit Web Dashboard**: Upload any waste image to receive instant classification, confidence scores, probability distributions, and tailored disposal action items.
 - ⚡ **Dual-Mode CLI Inference Engine (`predict.py`)**: Predict waste categories directly from local image files or direct image URLs from the web.
-- 🎯 **Real-time Object Detection Prototype (`detect_waste.py`)**: Integrated YOLOv11 detector for localized object bounding boxes.
+- 🎯 **Real-time Object Detection & Pipeline (`waste_pipeline.py`)**: Integrated YOLO detector + ResNet-18 pipeline for multi-object bounding boxes and classification.
+- 🛡️ **OOD Guard V1**: Out-of-distribution detection utilizing test-time augmentations, normalized entropy, and top-2 margin analysis.
 - 📊 **Robust MLOps & Diagnostics**: Built-in scripts for learning rate scheduling (`ReduceLROnPlateau`), error analysis, confusion matrix plotting, and dataset inspection.
 - 🚀 **Hardware Acceleration**: Automatic GPU detection (CUDA) with fallback to CPU execution.
 
@@ -77,7 +78,7 @@ flowchart TD
     subgraph Deployment["4. Inference & User Interfaces"]
         BestWeights --> StreamlitApp["Streamlit Web App (app.py)\n• Image Upload\n• Top-3 Probabilities\n• Disposal Guidance"]
         BestWeights --> CLIPredict["CLI & URL Predictor (predict.py)\n• Local Files\n• Remote Image URLs"]
-        BestWeights --> YOLODetect["YOLO Detector (detect_waste.py)\n• Bounding Box Detection"]
+        BestWeights --> Pipeline["Detection Pipeline (waste_pipeline.py)\n• Multi-Object Detection"]
     end
 ```
 
@@ -150,6 +151,7 @@ The Streamlit web application (`app.py`) provides an intuitive UI for users and 
 - 🎯 **Prediction with Confidence Gauge**: Live confidence percentage with dynamic status indicators (`High`, `Moderate`, `Low`).
 - 💡 **Actionable Eco-Advice**: Step-by-step instructions on proper bin placement and item preparation.
 - 📊 **Probability Distribution**: Full confidence breakdown across all 6 classes and Top-3 ranked results with visual progress bars.
+- 🛡️ **OOD Guard V1**: Real-time out-of-distribution detection to flag non-waste or ambiguous objects.
 
 ```bash
 streamlit run app.py
@@ -171,44 +173,6 @@ python predict.py "path/to/waste_image.jpg"
 
 ```bash
 python predict.py "https://images.unsplash.com/photo-1530587191325-3db32d826c18?w=500"
-```
-
-### Sample CLI Output
-
-```text
-=================================================================
-SMART WASTE CLASSIFIER
-=================================================================
-Device: cuda
-GPU: NVIDIA GeForce RTX 3060
-
-Loading trained model...
-Trained model loaded successfully!
-
-Downloading image from web...
-Web image downloaded successfully.
-
-=================================================================
-PREDICTION RESULT
-=================================================================
-Predicted waste : Plastic
-Confidence      : 98.42%
-
-=================================================================
-CLASS PROBABILITIES
-=================================================================
-Plastic             :  98.42%
-Glass               :   0.89%
-Metal               :   0.45%
-Paper               :   0.14%
-Cardboard           :   0.07%
-Food Organics       :   0.03%
-
-=================================================================
-CONFIDENCE ANALYSIS
-=================================================================
-Confidence level : VERY HIGH
-=================================================================
 ```
 
 ---
@@ -245,8 +209,6 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-*(Note: If you have a CUDA-compatible GPU, install the CUDA PyTorch build according to the [official PyTorch guide](https://pytorch.org/get-started/locally/).)*
-
 ### 4. Launch the Streamlit App
 
 ```bash
@@ -254,20 +216,6 @@ streamlit run app.py
 ```
 
 Open your browser at `http://localhost:8501`.
-
-### 5. Train the Model from Scratch (Optional)
-
-```bash
-# Prepare data and train ResNet-18
-python train_resnet.py
-
-# Evaluate on the test split
-python evaluate_resnet.py
-
-# Generate confusion matrix and error analysis plots
-python confusion_matrix_resnet.py
-python error_analysis.py
-```
 
 ---
 
@@ -282,7 +230,7 @@ Smart_Waste_Classifier/
 ├── requirements.txt                   # Production Python dependencies
 ├── DATASET_PLAN.md                    # Data curation, filtering & augmentation strategy
 │
-├── app.py                             # Interactive Streamlit Web Application
+├── app.py                             # Interactive Streamlit Web Application (with OOD Guard V1)
 ├── model_resnet.py                    # ResNet-18 Transfer Learning Model Definition
 ├── model.py                           # Baseline Custom 3-Block CNN Model Definition
 ├── prepare_data.py                    # Dataset loading, filtering, and DataLoader pipeline
@@ -291,30 +239,43 @@ Smart_Waste_Classifier/
 ├── evaluate_resnet.py                 # ResNet-18 quantitative test evaluation
 ├── evaluate.py                        # Baseline CNN test evaluation
 ├── predict.py                         # Standalone CLI & URL inference engine
-├── detect_waste.py                    # YOLOv11 real-time multi-object detection script
+├── detect_waste.py                    # YOLO real-time multi-object detection script
+├── waste_pipeline.py                  # End-to-end YOLO detection + ResNet-18 classification pipeline
+├── prepare_detection_data.py          # TACO-to-YOLO dataset converter & label mapper
+├── train_yolo.py                      # YOLO custom training pipeline
+├── test_yolo.py                       # YOLO detection inference and benchmarking script
+├── project_status.py                  # Diagnostic system health & environment check script
 ├── confusion_matrix_resnet.py         # Confusion matrix and classification report generator
 ├── error_analysis.py                  # High-confidence error analysis & visualization script
 ├── inspect_dataset.py                 # Dataset split and class distribution inspection
 ├── visualize_dataset.py               # Single sample visualization script
 ├── visualize_dataset_multiple.py      # Multi-sample grid visualizer
 │
+├── detection/
+│   ├── data.yaml                      # YOLO dataset configuration
+│   └── download_taco_images.py        # Automated TACO dataset image downloader
+│
 ├── waste_resnet18_best.pth            # Trained ResNet-18 weights (93.34% Test Accuracy)
 ├── waste_classifier.pth               # Trained Baseline CNN weights (59.77% Test Accuracy)
 ├── yolo11n.pt                         # YOLOv11 neural network weights
+├── weights/yolo26n.pt                 # YOLO model checkpoint
 │
 ├── dataset_samples.png                # Dataset sample preview image
 ├── dataset_samples_multiple.png       # Comprehensive multi-class sample grid
 ├── confusion_matrix_resnet.png        # ResNet-18 confusion matrix plot
 ├── confusion_matrix.png               # Baseline CNN confusion matrix plot
 ├── resnet_error_analysis.png          # ResNet-18 error analysis visual grid
-└── detected_waste.jpg                 # YOLO object detection output preview
+├── detected_waste.jpg                 # YOLO object detection output preview
+├── waste_pipeline_result.jpg          # Multi-object detection + classification visual result
+└── thumbnail.jpg                      # Project banner & social preview thumbnail
 ```
 
 ---
 
 ## 🔮 Future Roadmap
 
-- [x] **YOLO Object Detection Prototype**: Added YOLOv11 object detection testing pipeline (`detect_waste.py`).
+- [x] **YOLO Object Detection Prototype**: Added YOLO object detection testing pipeline (`detect_waste.py`, `waste_pipeline.py`).
+- [x] **OOD Guard System**: Implemented Out-of-Distribution uncertainty handling in Streamlit.
 - [ ] **Edge Deployment**: Optimize models with TensorRT / ONNX Runtime for deployment on embedded devices (e.g., Raspberry Pi, NVIDIA Jetson) in smart bin hardware.
 - [ ] **Mobile Application**: Build a Flutter / React Native camera companion app for on-the-go waste sorting.
 - [ ] **Expanded Class Taxonomy**: Include E-waste (electronic waste), hazardous chemicals, and battery categories with dedicated disposal workflows.

@@ -47,3 +47,11 @@ prediction_history.json
 prediction_history.csv
 waste_history.csv
 app_backup.py
+terminal_history.txt
+checkpoint.txt
+
+# YOLO / Object Detection Datasets & Training Runs
+runs/
+detection/runs/
+detection/raw_taco/
+detection/dataset/
