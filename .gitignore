@@ -54,4 +54,7 @@ checkpoint.txt
 runs/
 detection/runs/
 detection/raw_taco/
+detection/raw_supplemental/
 detection/dataset/
+detection/dataset_taco_original/
+detection/dataset_combined/
