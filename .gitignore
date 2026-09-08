@@ -42,6 +42,7 @@ Desktop.ini
 
 # Temporary / Scratch logs & local storage
 *.log
+*.zip
 scratch/
 prediction_history.json
 prediction_history.csv
@@ -58,3 +59,4 @@ detection/raw_supplemental/
 detection/dataset/
 detection/dataset_taco_original/
 detection/dataset_combined/
+detection/dataset_v2/

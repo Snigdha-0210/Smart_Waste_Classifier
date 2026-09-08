@@ -351,12 +351,18 @@ Smart_Waste_Classifier/
 │
 ├── detection/                         # Object Detection Subsystem
 │   ├── merge_detection_datasets.py    # Merges TACO + supplemental datasets with validation
+│   ├── create_balanced_dataset_v2.py  # Generates balanced dataset_v2 by filtering high-density clusters
+│   ├── analyze_combined_dataset.py    # Quantifies class distribution & multi-label co-occurrences
+│   ├── analyze_food_images.py         # Inspects dense Food Organics object distribution
 │   ├── train_yolo.py                  # YOLOv11 training script on combined 6-class dataset
 │   ├── download_taco_images.py        # Automated TACO image downloader
 │   └── data.yaml                      # YOLO dataset configuration
 │
 ├── prepare_detection_data.py          # TACO COCO-to-YOLO dataset converter V1
 ├── prepare_detection_data_v2.py       # TACO-to-YOLO converter V2 with stratified split protection
+│
+├── prediction_sample/                 # Sample prediction visual outputs with bounding boxes
+├── real_world_test/                   # Real-world challenging municipal waste benchmark images
 │
 ├── waste_resnet18_best.pth            # Trained ResNet-18 model weights (93.34% accuracy)
 ├── waste_classifier.pth               # Trained Baseline CNN model weights (59.77% accuracy)

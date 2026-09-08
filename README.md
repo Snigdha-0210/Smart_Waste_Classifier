@@ -306,12 +306,17 @@ Smart_Waste_Classifier/
 ├── inspect_dataset.py                 # Dataset split and class distribution inspection
 ├── visualize_dataset.py               # Single sample visualization script
 ├── visualize_dataset_multiple.py      # Multi-sample grid visualizer
-│
 ├── detection/                         # Detection Subsystem & Harmonization
 │   ├── merge_detection_datasets.py    # Multi-dataset fusion, remapping & validation script
+│   ├── create_balanced_dataset_v2.py  # High-density Food Organics balancer & dataset_v2 builder
+│   ├── analyze_combined_dataset.py    # Class balance and object density analyzer
+│   ├── analyze_food_images.py         # Food Organics density distribution inspector
 │   ├── train_yolo.py                  # YOLOv11 training script on combined 6-class dataset
 │   ├── download_taco_images.py        # Automated TACO dataset image downloader
 │   └── data.yaml                      # YOLO dataset configuration
+│
+├── prediction_sample/                 # Visual predictions with localized bounding boxes
+├── real_world_test/                   # Real-world challenging municipal waste benchmark test set
 │
 ├── waste_resnet18_best.pth            # Trained ResNet-18 weights (93.34% Test Accuracy)
 ├── waste_classifier.pth               # Trained Baseline CNN weights (59.77% Test Accuracy)
