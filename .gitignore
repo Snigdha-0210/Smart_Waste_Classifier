@@ -60,3 +60,6 @@ detection/dataset/
 detection/dataset_taco_original/
 detection/dataset_combined/
 detection/dataset_v2/
+detection/dataset_v3/
+detection/dataset_*/
+

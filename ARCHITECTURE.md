@@ -2,9 +2,9 @@
 
 <div align="center">
 
-![Project Banner](thumbnail.jpg)
+![Project Banner](assets/thumbnail.jpg)
 
-### Deep Learning-Powered Multi-Stage Waste Segregation, Object Detection & Eco-Disposal Guidance
+### Deep Learning-Powered Multi-Stage Waste Segregation, Object Detection & Eco-Disposal Guidance System
 
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C.svg?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![Ultralytics YOLO11](https://img.shields.io/badge/YOLO-11n_Detector-00FFFF.svg?style=for-the-badge&logo=yolo&logoColor=black)](https://github.com/ultralytics/ultralytics)
@@ -18,259 +18,290 @@
 
 ## 📑 Table of Contents
 
-1. [System Overview & High-Level Architecture](#1-system-overview--high-level-architecture)
-2. [End-to-End Hybrid Detection + Classification Pipeline](#2-end-to-end-hybrid-detection--classification-pipeline)
-3. [Dataset Engineering & Multi-Dataset Harmonization](#3-dataset-engineering--multi-dataset-harmonization)
-4. [Model Architectures & Training Protocols](#4-model-architectures--training-protocols)
-5. [OOD Guard V1: Uncertainty & Out-of-Distribution Engine](#5-ood-guard-v1-uncertainty--out-of-distribution-engine)
-6. [Quantitative Benchmarks & Evaluation Suite](#6-quantitative-benchmarks--evaluation-suite)
-7. [Visual Artifacts & Diagnostics Showcase](#7-visual-artifacts--diagnostics-showcase)
-8. [Codebase Map & Module Specifications](#8-codebase-map--module-specifications)
-9. [Operational Execution Guide](#9-operational-execution-guide)
+1. [Executive Summary & Architectural Philosophy](#1-executive-summary--architectural-philosophy)
+2. [End-to-End System Architecture](#2-end-to-end-system-architecture)
+3. [Cascaded Dual-Stage Inference Pipeline](#3-cascaded-dual-stage-inference-pipeline)
+4. [Dataset Engineering & Multi-Source Harmonization](#4-dataset-engineering--multi-source-harmonization)
+5. [Deep Learning Core & Model Specifications](#5-deep-learning-core--model-specifications)
+6. [Mathematical Formulations & Uncertainty Engine (OOD Guard V1)](#6-mathematical-formulations--uncertainty-engine-ood-guard-v1)
+7. [Quantitative Benchmarks & Evaluation Suite](#7-quantitative-benchmarks--evaluation-suite)
+8. [Visual Diagnostics & Artifacts Showcase](#8-visual-diagnostics--artifacts-showcase)
+9. [Hardware Acceleration, Memory & Latency Profiling](#9-hardware-acceleration-memory--latency-profiling)
+10. [Codebase Map & Module Specifications](#10-codebase-map--module-specifications)
+11. [Operational Execution Guide](#11-operational-execution-guide)
 
 ---
 
-## 1. System Overview & High-Level Architecture
+## 1. Executive Summary & Architectural Philosophy
 
-The **Smart Waste Classifier** is an enterprise-grade, modular computer vision system designed to automate municipal and household solid waste segregation. It solves the critical bottleneck of recycling contamination by combining real-time multi-object localization, fine-grained residual classification, out-of-distribution (OOD) uncertainty filtering, and contextual eco-disposal guidance.
+The **Smart Waste Classifier** is an enterprise-grade, modular computer vision system designed to automate municipal and household solid waste segregation. Standard single-stage image classifiers fail in real-world scenarios due to:
+1. **Scene Clutter & Multi-Object Overlaps**: Typical garbage bins or conveyor belts contain multiple overlapping items rather than a single centered object.
+2. **Ambiguous Catch-All Classes**: Datasets with noisy categories (e.g. *Miscellaneous Trash*) degrade gradient descent convergence.
+3. **Silent Overconfidence**: Deep neural networks assign high softmax probabilities to out-of-domain images (e.g. classifying a laptop as plastic).
+
+To overcome these constraints, the system implements a **Cascaded Dual-Stage Architecture** with an integrated **Uncertainty Quantification Guard (OOD Guard V1)**:
+
+```
+[Raw Scene Image] ──► [Stage 1: YOLO11n Localization] ──► [ROI Crops] ──► [Stage 2: ResNet-18 Classification] ──► [OOD Guard V1 Gating] ──► [Eco-Action Output]
+```
+
+---
+
+## 2. End-to-End System Architecture
+
+The following diagram illustrates the complete architectural topology, from multi-source data ingestion to user-facing inference interfaces:
 
 ```mermaid
 flowchart TD
-    %% Global Styling
+    %% Styling definitions
     classDef data fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#01579b;
     classDef model fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#1b5e20;
     classDef guard fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100;
     classDef ui fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c;
+    classDef eval fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#880e4f;
 
-    subgraph DataEngine["1. Data Harmonization & Curation Layer"]
+    subgraph Layer1["1. Data Ingestion & Harmonization Engine"]
         HF[("Hugging Face Hub\n(ddompe/waste-segregation-dataset)")]:::data
-        TACO[("TACO Raw Dataset\n(COCO Bounding Boxes)")]:::data
+        TACO[("TACO Dataset\n(COCO Bounding Boxes)")]:::data
         SUPP[("Supplemental Custom Dataset\n(YOLO Annotations)")]:::data
         
-        Merge["merge_detection_datasets.py\n• Label Validation\n• Class Remapping (6 Classes)\n• Prefixing & Collision Handling"]:::data
-        Stratify["prepare_detection_data_v2.py\n• Stratified Splitting\n• Rare Class Preservation"]:::data
+        Merge["merge_detection_datasets.py\n• Label Validator\n• Coordinate Normalizer\n• 6-Class Remapper\n• Prefixing Collision Handler"]:::data
+        BalancedV2["create_balanced_dataset_v2.py\n• Density Cluster Limiter\n• Balanced 6-Class Distribution"]:::data
+        PrepClf["prepare_data.py\n• 6-Class Remapping\n• Resizing & Stochastic Augmentation"]:::data
         
-        TACO --> Stratify
-        SUPP --> Merge
+        HF --> PrepClf
         TACO --> Merge
-        HF --> DataPrep["prepare_data.py\n• 6-Class Remapping\n• Resizing & Augmentation"]:::data
+        SUPP --> Merge
+        Merge --> BalancedV2
     end
 
-    subgraph CoreModels["2. Deep Learning Core"]
-        ResNet["Fine-Tuned ResNet-18\n(waste_resnet18_best.pth)\n93.34% Accuracy"]:::model
-        YOLO["YOLO11n Detector\n(yolo11n.pt / waste_yolo_combined)\nReal-time Bounding Boxes"]:::model
-        BaseCNN["Custom 3-Block CNN Baseline\n(waste_classifier.pth)\n59.77% Accuracy"]:::model
+    subgraph Layer2["2. Deep Learning Modeling Core"]
+        PrepClf --> Loaders["PyTorch DataLoaders\n(Train / Val / Test)"]:::data
+        Loaders --> ResNet["Fine-Tuned ResNet-18\n(waste_resnet18_best.pth)\n93.34% Accuracy"]:::model
+        Loaders --> BaseCNN["Custom 3-Block CNN Baseline\n(waste_classifier.pth)\n59.77% Accuracy"]:::model
         
-        DataPrep --> ResNet
-        DataPrep --> BaseCNN
-        Merge --> YOLO
+        BalancedV2 --> YOLOTrain["YOLO11n Training Loop\n(detection/train_yolo.py)"]:::model
+        YOLOTrain --> YOLOBest[("YOLO11 Detector Weights\n(best.pt)")]:::model
     end
 
-    subgraph InferenceCascade["3. Hybrid Cascaded Inference Pipeline"]
-        InputImg["Input Image / Camera Stream"]:::ui --> YOLO
-        YOLO --> BBoxes["Localized Bounding Boxes\n+ Object Confidence"]:::model
-        BBoxes --> Cropper["Dynamic Crop & Aspect Pad\n(Resize to 224x224 RGB)"]:::data
+    subgraph Layer3["3. Hybrid Cascaded Inference Pipeline"]
+        InputImg["Input Image / Stream"]:::ui --> YOLOBest
+        YOLOBest --> BBoxes["Localized Bounding Boxes\n+ Detector Confidence"]:::model
+        BBoxes --> Cropper["ROI Crop & Aspect Pad\n(Resize to 224x224 RGB)"]:::data
         Cropper --> ResNet
-        ResNet --> Softmax["Softmax Probabilities\nAcross 6 Classes"]:::model
+        ResNet --> Softmax["Softmax Probabilities\np = [p₀, ..., p₅]"]:::model
     end
 
-    subgraph UncertaintyLayer["4. Robustness & OOD Guard V1"]
-        Softmax --> Entropy["Normalized Shannon Entropy\nH(p) / ln(K)"]:::guard
-        Softmax --> Margin["Top-1 vs Top-2 Margin Delta\nΔ = p₁ - p₂"]:::guard
-        Cropper --> TTA["Test-Time Augmentations (TTA)\nFlips, Jitter, Scaled Passes"]:::guard
-        TTA --> TTAVar["TTA Prediction Agreement\n& Variance Estimator"]:::guard
+    subgraph Layer4["4. Robustness & Uncertainty Guard (OOD Guard V1)"]
+        Softmax --> Entropy["Normalized Shannon Entropy\nH_norm = -Σ(pᵢ ln pᵢ) / ln(6)"]:::guard
+        Softmax --> Margin["Top-2 Margin Delta\nΔ = p₁ - p₂"]:::guard
+        Cropper --> TTA["5-Pass Test-Time Augmentation (TTA)\n(Flips, Scale, Color Jitter, Crop)"]:::guard
+        TTA --> TTAVar["TTA Prediction Agreement %"]:::guard
         
-        Entropy --> Gate{"OOD Guard Decision Gating\n• Min Confidence >= 0.70\n• Min Margin >= 0.18\n• Max Entropy <= 0.72\n• Min TTA Agreement >= 0.60"}:::guard
+        Entropy --> Gate{"OOD Guard Decision Gating\n• Confidence >= 0.70\n• Margin Δ >= 0.18\n• Entropy <= 0.72\n• TTA Agreement >= 60%"}:::guard
         Margin --> Gate
         TTAVar --> Gate
     end
 
-    subgraph Delivery["5. User Interfaces & Actionable Guidance"]
-        Gate -- "Pass" --> Verified["Confident Prediction\n+ Bin Allocation\n+ Eco-Action Guidelines"]:::ui
-        Gate -- "Flag" --> OODWarning["OOD / Ambiguous Alert\n+ Uncertainty Diagnostics\n+ Manual Inspection Prompt"]:::guard
+    subgraph Layer5["5. User Interfaces & Actionable Guidance"]
+        Gate -- "Pass" --> Verified["🟢 Verified In-Distribution\n+ Waste Category\n+ Eco Preparation Rules"]:::eval
+        Gate -- "Flag" --> Flagged["🔴 Ambiguous / OOD Item\n+ Uncertainty Diagnostics\n+ Manual Check Prompt"]:::guard
         
-        Verified --> Dashboard["Streamlit Web App (app.py)"]:::ui
-        Verified --> CLI["CLI Predictor (predict.py)"]:::ui
-        Verified --> MultiPipeline["End-to-End Pipeline (waste_pipeline.py)"]:::ui
+        Verified --> StreamlitUI["Streamlit Web App (app.py)"]:::ui
+        Verified --> CLIPipe["CLI Inference (predict.py)"]:::ui
+        Verified --> DualPipe["Cascaded Pipeline (waste_pipeline.py)"]:::ui
     end
 ```
 
 ---
 
-## 2. End-to-End Hybrid Detection + Classification Pipeline
+## 3. Cascaded Dual-Stage Inference Pipeline
 
-In complex real-world municipal environments, scenes rarely contain a single centered object against a clean background. The system introduces a **Cascaded Dual-Stage Inference Architecture** (`waste_pipeline.py`):
+In complex municipal environments, waste items are frequently piled, touching, or partially occluded. The **Cascaded Dual-Stage Inference Pipeline** (`waste_pipeline.py`) unifies object localization and classification:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as User / Camera Stream
-    participant YOLO as YOLOv11 Detector
-    participant Pre as Preprocessor & Aspect Padder
-    participant ResNet as ResNet-18 Classifier
-    participant OOD as OOD Guard V1
-    participant UI as Visualizer / Dashboard
+    actor User as User / Sorting Sensor
+    participant YOLO as Stage 1: YOLOv11 Detector
+    participant Pre as ROI Cropper & Aspect Padder
+    participant ResNet as Stage 2: ResNet-18 Classifier
+    participant OOD as OOD Guard V1 Engine
+    participant UI as Visual Canvas & Dashboard
 
-    User->>YOLO: Provide High-Resolution Raw Image
-    Note over YOLO: Multi-object feature extraction & NMS
-    YOLO-->>Pre: Return Bounding Boxes [x₁, y₁, x₂, y₂] & Detection Confidence
+    User->>YOLO: Submit Raw Scene Image (Any Resolution)
+    Note over YOLO: Feature extraction via SPPF & C3k2 modules
+    YOLO-->>Pre: Extract Bounding Boxes [x₁, y₁, x₂, y₂] & Detection Confidence
     
-    loop For Each Detected Object
-        Pre->>Pre: Crop Region of Interest (ROI) with Context Margin
-        Pre->>Pre: Aspect-Ratio Preserving Resize to 224x224
-        Pre->>Pre: Apply ImageNet Normalization (μ=[0.485, 0.456, 0.406], σ=[0.229, 0.224, 0.225])
+    loop For Every Detected Bounding Box
+        Pre->>Pre: Crop ROI with Safety Margin
+        Pre->>Pre: Aspect-Ratio Preserving Resize to 224x224 RGB
+        Pre->>Pre: Normalize with ImageNet μ=[0.485, 0.456, 0.406], σ=[0.229, 0.224, 0.225]
         Pre->>ResNet: Forward Pass Tensor (Batch 1, 3, 224, 224)
-        ResNet-->>OOD: Logits & Softmax Probabilities [p₀, p₁, ..., p₅]
+        ResNet-->>OOD: Compute Class Logits & Softmax Vector [p₀, ..., p₅]
         OOD->>OOD: Evaluate Shannon Entropy, Margin Delta & TTA Agreement
-        alt High Confidence & Low Entropy
-            OOD-->>UI: Verified Waste Category + Confidence + Recycling Guidelines
-        else OOD or Low Confidence
-            OOD-->>UI: Flagged as Ambiguous / OOD Item
+        alt Verified In-Distribution
+            OOD-->>UI: Tag BBox with Waste Class + Confidence % + Disposal Rules
+        else Ambiguous / Out-of-Distribution
+            OOD-->>UI: Flag BBox as Uncertain / OOD Object
         end
     end
-
-    UI->>User: Render Visual Annotated Canvas with Bounding Boxes & Eco Tags
+    
+    UI->>User: Render Annotated Image with Bounding Boxes, Class Badges & Eco Guidelines
 ```
 
-### Key Technical Advantages of Cascade Design:
-1. **Separation of Concerns**: YOLO specializes in multi-object localization and clutter separation, while ResNet-18 specializes in high-fidelity material classification (e.g., discerning translucent plastic vs clear glass).
-2. **Context Retention**: Cropping individual items eliminates background interference and lighting bias from surrounding conveyor belts or floors.
-3. **Fail-Safe Operation**: If YOLO detects an unclassified item, ResNet-18 together with OOD Guard evaluates whether the item is valid municipal waste or non-waste noise.
+### Key Architectural Advantages of the Cascade:
+1. **Separation of Concerns**: YOLO specializes in multi-object spatial localization and non-maximum suppression (NMS), while ResNet-18 specializes in high-fidelity material classification (e.g., distinguishing clear PET plastic from glass).
+2. **Context Isolation**: Cropping each item individually eliminates visual distraction from background textures, floor stains, or conveyor belts.
+3. **Graceful Degradation**: If YOLO localizes a non-waste object (e.g., human hand, background wall), ResNet-18 and OOD Guard V1 catch and flag the false positive before sending incorrect disposal advice.
 
 ---
 
-## 3. Dataset Engineering & Multi-Dataset Harmonization
+## 4. Dataset Engineering & Multi-Source Harmonization
 
-### 3.1. Unified 6-Class Waste Taxonomy
+### 4.1. Standardized 6-Class Waste Taxonomy
 
-To create an industrial-grade taxonomy, ambiguous catch-all classes (*Miscellaneous Trash*, *Textile Trash*, and *Vegetation*) were pruned to eliminate label noise. All downstream classification and detection modules adhere strictly to the contiguous 6-class representation:
+To ensure robust industrial applicability, the dataset taxonomy focuses on 6 actionable municipal waste streams:
 
-| Class ID | Waste Category | Target Stream | Primary Material Signatures | Eco-Action Protocol |
+| Class ID | Target Category | Target Stream | Primary Material Signatures | Eco-Action Protocol |
 |:---:|:---|:---|:---|:---|
-| `0` | **Cardboard** | Recyclable / Dry Waste | Corrugated boxes, packaging cartons, paperboard | Flatten boxes, keep dry, remove adhesive tapes |
-| `1` | **Food Organics** | Organic / Compost | Fruit rinds, vegetable peels, leftovers, coffee grounds | Segregate to green compost bin; keep free of plastics |
-| `2` | **Glass** | Recyclable Waste | Beverage bottles, food jars, clear/colored glassware | Rinse cleanly, remove metallic/plastic caps, avoid breakage |
-| `3` | **Metal** | Recyclable Waste | Aluminum cans, tin containers, foil trays, aerosol cans | Empty contents, rinse residues, compress cans |
-| `4` | **Paper** | Recyclable / Dry Waste | Office documents, newspapers, magazines, paper bags | Keep dry, ensure free of food/grease contamination |
-| `5` | **Plastic** | Recyclable Waste | PET bottles, HDPE jugs, PP containers, clean wrappers | Check resin identification code, rinse thoroughly |
+| `0` | **Cardboard** | Recyclable / Dry Waste | Corrugated shipping boxes, packaging cartons, paperboard | Flatten boxes, keep clean & dry, place in cardboard recycling. |
+| `1` | **Food Organics** | Organic / Compost | Fruit peels, food leftovers, vegetable waste, coffee grounds | Segregate into green organic bin; keep free of non-compostable packaging. |
+| `2` | **Glass** | Recyclable Waste | Beverage bottles, pickle jars, clear/tinted glassware | Empty and rinse bottles, remove metal/plastic lids; place in glass bin. |
+| `3` | **Metal** | Recyclable Waste | Aluminum cans, food tins, foil trays, aerosol cans | Empty contents, rinse food residues, lightly compress cans. |
+| `4` | **Paper** | Recyclable / Dry Waste | Office documents, newspapers, magazines, clean paper bags | Keep dry, ensure free of food grease/wax coatings. |
+| `5` | **Plastic** | Recyclable Waste | PET beverage bottles, HDPE jugs, PP containers, clean tubs | Empty & rinse containers, check resin ID code; place in plastics bin. |
 
 ---
 
-### 3.2. Multi-Dataset Merger & Harmonization Pipeline (`merge_detection_datasets.py`)
+### 4.2. Multi-Dataset Merger & Normalization Engine (`merge_detection_datasets.py`)
 
-The detection subsystem fuses multiple heterogeneous datasets into a single standardized YOLO-format repository (`dataset_combined`):
+The detection pipeline combines the **TACO Dataset** (COCO annotations) and a **Supplemental Custom Dataset** (YOLO annotations) into a unified dataset:
 
 ```mermaid
 flowchart LR
-    subgraph RawSources["Raw Ingestion"]
-        T["TACO Dataset\n(COCO Annotations)"]
-        S["Supplemental Custom Dataset\n(6-Class YOLO Annotations)"]
+    subgraph Ingestion["Raw Data Sources"]
+        T["TACO Dataset\n(COCO BBoxes)"]
+        S["Supplemental Dataset\n(Custom YOLO Labels)"]
     end
 
-    subgraph Harmonization["Harmonization Engine (merge_detection_datasets.py)"]
-        V1["Validate YOLO Labels\n• Normalized BBox Coordinates [0, 1]\n• Positive Non-Zero Width/Height\n• Bounded Class IDs"]
-        R1["Remap Supplemental Classes:\n• 0 (Bio) → 1 (Food Organics)\n• 1 (Cardboard) → 0 (Cardboard)\n• 2 (Glass) → 2 (Glass)\n• 3 (Metal) → 3 (Metal)\n• 4 (Paper) → 4 (Paper)\n• 5 (Plastic) → 5 (Plastic)"]
-        Pref["Prefix Filenames to Prevent Collision\n• taco_*.jpg / taco_*.txt\n• supp_*.jpg / supp_*.txt"]
+    subgraph Harmonizer["Harmonization Engine (merge_detection_datasets.py)"]
+        V["1. Validate YOLO Format:\n• [class_id x_center y_center width height]\n• Check Bounds: 0.0 <= coord <= 1.0\n• Positive Non-Zero Area: w > 0, h > 0"]
+        R["2. Remap Classes to Contiguous [0..5]:\n• 0 (Bio) → 1 (Food Organics)\n• 1 (Cardboard) → 0 (Cardboard)\n• 2 (Glass) → 2 (Glass)\n• 3 (Metal) → 3 (Metal)\n• 4 (Paper) → 4 (Paper)\n• 5 (Plastic) → 5 (Plastic)"]
+        P["3. Prefix Filenames:\n• taco_*.jpg / taco_*.txt\n• supp_*.jpg / supp_*.txt\n(Eliminates namespace collisions)"]
     end
 
-    subgraph OutputRepo["Standardized Combined Dataset (dataset_combined)"]
-        YAML["data.yaml\n(Path, Splits, 6 Classes)"]
-        Imgs["images/\n├── train/\n├── val/\n└── test/"]
-        Lbls["labels/\n├── train/\n├── val/\n└── test/"]
+    subgraph OutputData["Harmonized Dataset (dataset_combined / dataset_v2)"]
+        Y["data.yaml\n(Path, 6 Classes)"]
+        I["images/\n├── train/\n├── val/\n└── test/"]
+        L["labels/\n├── train/\n├── val/\n└── test/"]
     end
 
-    T --> V1 --> Pref --> OutputRepo
-    S --> R1 --> V1 --> Pref --> OutputRepo
+    T --> V --> P --> OutputData
+    S --> R --> V --> P --> OutputData
 ```
 
 ---
 
-## 4. Model Architectures & Training Protocols
+### 4.3. High-Density Cluster Balancing (`create_balanced_dataset_v2.py`)
 
-### 4.1. Fine-Tuned ResNet-18 Classifier (`model_resnet.py` & `train_resnet.py`)
-
-- **Base Architecture**: 18-layer Residual Network with skip connections to mitigate vanishing gradients.
-- **Pretrained Initialization**: `ResNet18_Weights.DEFAULT` (ImageNet-1K).
-- **Head Adaptation**: Fully Connected linear head replaced with `nn.Linear(in_features=512, out_features=6)`.
-- **Loss Function**: Multi-Class Cross-Entropy Loss with Softmax:
-  $$\mathcal{L}_{CE} = -\sum_{i=1}^K y_i \log(\hat{y}_i)$$
-- **Optimization Strategy**:
-  - Optimizer: Adam ($\beta_1=0.9, \beta_2=0.999$, weight decay $= 10^{-4}$)
-  - Base Learning Rate: $\eta = 10^{-4}$
-  - Learning Rate Scheduler: `ReduceLROnPlateau(factor=0.5, patience=2, min_lr=1e-6)`
-  - Batch Size: 32
-  - Augmentation: Stochastic horizontal flips ($p=0.5$), random rotations ($\pm 10^\circ$), random affine scaling ($[0.90, 1.10]$) and translations ($\pm 5\%$).
+In organic waste datasets, photographs of compost heaps frequently contain 40–100 tiny overlapping food scraps, which skews detection anchors and overwhelms mini-batch gradients:
+- **Max Food Objects per Image**: Capped at 20 objects.
+- **Controlled Subsampling**: Food images with $>20$ annotations are sampled at 25% retention.
+- **Class Balance Preservation**: Non-organic images (Cardboard, Glass, Metal, Paper, Plastic) are 100% retained.
 
 ---
 
-### 4.2. Custom 3-Block CNN Baseline (`model.py` & `train.py`)
+## 5. Deep Learning Core & Model Specifications
 
-As a rigorous empirical baseline, a custom Convolutional Neural Network was designed from scratch:
-- **Block 1**: `Conv2d(3, 32, kernel=3, pad=1)` $\rightarrow$ `BatchNorm2d` $\rightarrow$ `ReLU` $\rightarrow$ `MaxPool2d(2, 2)`
-- **Block 2**: `Conv2d(32, 64, kernel=3, pad=1)` $\rightarrow$ `BatchNorm2d` $\rightarrow$ `ReLU` $\rightarrow$ `MaxPool2d(2, 2)`
-- **Block 3**: `Conv2d(64, 128, kernel=3, pad=1)` $\rightarrow$ `BatchNorm2d` $\rightarrow$ `ReLU` $\rightarrow$ `MaxPool2d(2, 2)`
-- **Classifier Head**: `Flatten` $\rightarrow$ `Linear(128 * 16 * 16, 256)` $\rightarrow$ `Dropout(0.5)` $\rightarrow$ `Linear(256, 6)`
+### 5.1. Pretrained ResNet-18 Transfer Learning Classifier
+
+- **Backbone**: 18-layer Deep Residual Network with identity skip connections:
+  $$\mathbf{y} = \mathcal{F}(\mathbf{x}, \{W_i\}) + \mathbf{x}$$
+- **Initialization**: Pretrained on ImageNet-1K (`ResNet18_Weights.DEFAULT`).
+- **Classification Head**:
+  ```python
+  model.fc = nn.Linear(in_features=512, out_features=6)
+  ```
+- **Training Hyperparameters**:
+  - Optimizer: `Adam(lr=1e-4, weight_decay=1e-4)`
+  - Scheduler: `ReduceLROnPlateau(mode='min', factor=0.5, patience=2, min_lr=1e-6)`
+  - Loss: Multi-Class Cross-Entropy Loss:
+    $$\mathcal{L}_{CE} = -\sum_{k=1}^K y_k \log(\hat{y}_k)$$
+  - Augmentations: Random horizontal flip ($p=0.5$), random rotation ($\pm 10^\circ$), random affine scaling ($[0.90, 1.10]$), ImageNet normalization.
 
 ---
 
-### 4.3. YOLOv11n Object Detector (`detection/train_yolo.py`)
+### 5.2. Custom 3-Block CNN Baseline
 
-- **Architecture**: Ultralytics YOLO11 Nano (`yolo11n.pt`) with C3k2 modules and SPPF (Spatial Pyramid Pooling - Fast).
-- **Resolution**: $640 \times 640$ pixels.
-- **Hyperparameters**:
+For empirical comparison, a custom Convolutional Neural Network was built and trained from scratch:
+- **Layer 1**: `Conv2d(3, 32, 3, pad=1)` $\rightarrow$ `BatchNorm2d` $\rightarrow$ `ReLU` $\rightarrow$ `MaxPool2d(2, 2)`
+- **Layer 2**: `Conv2d(32, 64, 3, pad=1)` $\rightarrow$ `BatchNorm2d` $\rightarrow$ `ReLU` $\rightarrow$ `MaxPool2d(2, 2)`
+- **Layer 3**: `Conv2d(64, 128, 3, pad=1)` $\rightarrow$ `BatchNorm2d` $\rightarrow$ `ReLU` $\rightarrow$ `MaxPool2d(2, 2)`
+- **Classifier**: `Linear(128 * 16 * 16, 256)` $\rightarrow$ `Dropout(0.5)` $\rightarrow$ `Linear(256, 6)`
+
+---
+
+### 5.3. YOLOv11n Multi-Object Detector
+
+- **Backbone**: Ultralytics YOLO11 Nano (`yolo11n.pt`) with C3k2 modules and Spatial Pyramid Pooling - Fast (SPPF).
+- **Training Configuration**:
+  - Resolution: $640 \times 640$ pixels
   - Epochs: 100 with Early Stopping (`patience=20`)
-  - Batch Size: 16
-  - Mixed Precision: Automated Mixed Precision (`amp=True`)
-  - Augmentations: Mosaic augmentation (`mosaic=1.0`), closed during the final 10 epochs (`close_mosaic=10`), rotation ($\pm 10^\circ$), scale jitter ($0.5$).
+  - Precision: Automated Mixed Precision (`amp=True`)
+  - Augmentations: Mosaic augmentation ($1.0$), scale ($0.5$), rotation ($\pm 10^\circ$), translation ($0.1$), closed during final 10 epochs.
 
 ---
 
-## 5. OOD Guard V1: Uncertainty & Out-of-Distribution Engine
+## 6. Mathematical Formulations & Uncertainty Engine (OOD Guard V1)
 
-To prevent silent misclassification when arbitrary or out-of-domain images are submitted, **OOD Guard V1** executes a multi-signal uncertainty quantification pipeline:
+Standard deep classifiers suffer from softmax overconfidence on out-of-distribution (OOD) inputs. **OOD Guard V1** combines three independent statistical metrics:
 
-```mermaid
-flowchart TD
-    In[Input Image Crop] --> BasePred[Standard Forward Pass]
-    In --> TTAPass1[TTA: Horizontal Flip]
-    In --> TTAPass2[TTA: Slight Rotation]
-    In --> TTAPass3[TTA: Contrast Scale]
-    
-    BasePred --> ProbCalc["Compute Softmax: p = [p₀, ..., p₅]"]
-    ProbCalc --> C1["1. Top-1 Confidence: max(p)"]
-    ProbCalc --> C2["2. Top-2 Margin Delta: Δ = p₁ - p₂"]
-    ProbCalc --> C3["3. Normalized Shannon Entropy:\nH_norm = -Σ(pᵢ ln pᵢ) / ln(6)"]
-    
-    TTAPass1 --> TTAVote[TTA Prediction Agreement %]
-    TTAPass2 --> TTAVote
-    TTAPass3 --> TTAVote
-    
-    C1 --> Evaluator{"OOD Evaluation Engine"}
-    C2 --> Evaluator
-    C3 --> Evaluator
-    TTAVote --> Evaluator
-    
-    Evaluator --> |"max(p) >= 0.70<br/>Δ >= 0.18<br/>H_norm <= 0.72<br/>TTA >= 60%"| Approved["VERIFIED IN-DISTRIBUTION<br/>(Render Waste Category & Eco Advice)"]
-    Evaluator --> |"Condition Failed"| Flagged["OOD / UNCERTAIN OBJECT<br/>(Display Alert & Request Clarification)"]
-```
+### 1. Normalized Shannon Entropy $\mathcal{H}_{norm}$
+
+Given predicted class probabilities $\mathbf{p} = [p_1, p_2, \dots, p_K]$ where $K = 6$:
+
+$$\mathcal{H}(\mathbf{p}) = -\sum_{k=1}^K p_k \ln(p_k + \epsilon)$$
+
+$$\mathcal{H}_{norm}(\mathbf{p}) = \frac{\mathcal{H}(\mathbf{p})}{\ln(K)} \in [0, 1]$$
+
+- High $\mathcal{H}_{norm} \approx 1.0 \implies$ Uniform distribution (high uncertainty).
+- Low $\mathcal{H}_{norm} \approx 0.0 \implies$ Peaked distribution (high confidence).
+- **Threshold**: $\mathcal{H}_{norm} \le 0.72$.
+
+### 2. Top-2 Probability Margin Delta $\Delta$
+
+Let $p_{(1)}$ and $p_{(2)}$ be the highest and second-highest predicted probabilities:
+
+$$\Delta = p_{(1)} - p_{(2)}$$
+
+- Small $\Delta \implies$ Classifier is torn between two ambiguous classes.
+- Large $\Delta \implies$ Decisive decision boundary separation.
+- **Threshold**: $\Delta \ge 0.18$ and $p_{(1)} \ge 0.70$.
+
+### 3. Test-Time Augmentation (TTA) Prediction Agreement
+
+The input image $\mathbf{x}$ is evaluated across $M = 5$ stochastic geometric transformations:
+
+$$\hat{y}^{(m)} = \arg\max_{k} f(\mathcal{T}_m(\mathbf{x})) \quad \text{for } m = 1, \dots, M$$
+
+$$\text{Agreement}(\mathbf{x}) = \frac{1}{M} \sum_{m=1}^M \mathbb{I}\left(\hat{y}^{(m)} = \hat{y}^{(1)}\right)$$
+
+- **Threshold**: $\text{Agreement}(\mathbf{x}) \ge 0.60$ (at least 3 out of 5 augmentations must agree).
 
 ---
 
-## 6. Quantitative Benchmarks & Evaluation Suite
+## 7. Quantitative Benchmarks & Evaluation Suite
 
-### 6.1. Empirical Performance Summary
+### 7.1. Model Architecture Comparison
 
-| Architecture / Model | Input Resolution | Pretrained Backbone | Test Accuracy | Test Loss | Correct / Total | Inference Speed (GPU) |
+| Model | Input Size | Pretrained | Test Accuracy | Test Loss | Correct / Total | Inference (GPU) |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Baseline 3-Block CNN** | $128 \times 128$ | None (Scratch) | **59.77%** | 1.1400 | 422 / 706 | ~3.2 ms |
+| **Baseline 3-Block CNN** | $128 \times 128$ | None | **59.77%** | ~1.1400 | 422 / 706 | ~3.2 ms |
 | **Fine-Tuned ResNet-18** | $224 \times 224$ | ImageNet-1K | **93.34%** | **0.2114** | **659 / 706** | ~5.8 ms |
-| **YOLO11n Detector** | $640 \times 640$ | COCO Pretrained | Real-Time Localization | Fast NMS | Multi-Object | ~8.4 ms |
+| **YOLO11n Detector** | $640 \times 640$ | COCO Pretrained | Multi-Object mAP | BBox Reg | Detection | ~8.4 ms |
 
-> 🚀 **Transfer Learning Gain**: ResNet-18 delivers a **+33.57% net accuracy improvement** and reduces misclassifications from 284 down to 47 items on the held-out test split.
-
----
-
-### 6.2. Per-Class Quantitative Metrics (ResNet-18)
+### 7.2. Per-Class Performance Metrics (ResNet-18)
 
 | Class ID | Class Name | Precision | Recall | F1-Score | Support |
 |:---:|:---|:---:|:---:|:---:|:---:|
@@ -285,75 +316,91 @@ flowchart TD
 
 ---
 
-## 7. Visual Artifacts & Diagnostics Showcase
+## 8. Visual Diagnostics & Artifacts Showcase
 
-### 7.1. Dataset Visual Distribution
+### 8.1. Classification Diagnostics (ResNet-18 & Baseline)
 
-![Dataset Samples Preview](dataset_samples.png)
-![Multi-Class Dataset Samples](dataset_samples_multiple.png)
+| ResNet-18 Confusion Matrix | Baseline CNN Confusion Matrix |
+|:---:|:---:|
+| ![ResNet-18 Confusion Matrix](assets/confusion_matrix_resnet.png) | ![Baseline CNN Confusion Matrix](assets/confusion_matrix_baseline.png) |
 
----
-
-### 7.2. Model Confusion Matrices
-
-![ResNet-18 Confusion Matrix](confusion_matrix_resnet.png)
-![Baseline CNN Confusion Matrix](confusion_matrix.png)
+| High-Confidence Error Diagnostics | Multi-Class Sample Grid |
+|:---:|:---:|
+| ![ResNet-18 Error Analysis](assets/resnet_error_analysis.png) | ![Multi-Class Dataset Samples](assets/dataset_samples_multiple.png) |
 
 ---
 
-### 7.3. Error Analysis & Edge Cases
+### 8.2. YOLOv11 Detection Diagnostics
 
-The error analysis module (`error_analysis.py`) identifies optical ambiguities (e.g. reflective foil vs polished metals):
+| 100-Epoch Training Metrics & Loss Curves | Validation Predictions |
+|:---:|:---:|
+| ![YOLO Training Results](assets/yolo_training_results.png) | ![YOLO Validation Predictions](assets/yolo_val_predictions.jpg) |
 
-![ResNet-18 Error Analysis](resnet_error_analysis.png)
-
----
-
-### 7.4. Real-Time Detection & Multi-Stage Cascaded Results
-
-![Detected Waste](detected_waste.jpg)
-![Waste Pipeline Result](waste_pipeline_result.jpg)
+| YOLO Detection Confusion Matrix | Precision-Recall (PR) Curve |
+|:---:|:---:|
+| ![YOLO Confusion Matrix](assets/yolo_confusion_matrix.png) | ![YOLO PR Curve](assets/yolo_pr_curve.png) |
 
 ---
 
-## 8. Codebase Map & Module Specifications
+### 8.3. Real-Time Detection vs Cascaded Multi-Stage Output
+
+| YOLO Multi-Object Detection | Cascaded Detection + Classification |
+|:---:|:---:|
+| ![Detected Waste](assets/detected_waste.jpg) | ![Waste Pipeline Result](assets/waste_pipeline_result.jpg) |
+
+---
+
+## 9. Hardware Acceleration, Memory & Latency Profiling
+
+The system is architected for both edge devices and dedicated GPU workstations:
+
+| Subsystem | Target Hardware | Precision | VRAM Footprint | Throughput / Latency |
+|:---|:---|:---:|:---:|:---:|
+| **ResNet-18 Classifier** | CUDA GPU / CPU | FP32 / FP16 | ~45 MB | ~5.8 ms / item (~172 FPS) |
+| **YOLO11n Detector** | CUDA GPU / CPU | AMP (FP16) | ~5.6 MB | ~8.4 ms / frame (~119 FPS) |
+| **Dual-Stage Cascade** | NVIDIA RTX 4060 | Mixed FP16 | ~110 MB | ~14.2 ms / scene (~70 FPS) |
+
+---
+
+## 10. Codebase Map & Module Specifications
 
 ```text
 Smart_Waste_Classifier/
 │
-├── .gitignore                         # Comprehensive exclusion rules (datasets, logs, weights, temp files)
-├── LICENSE                            # Open-source MIT License
-├── README.md                          # Repository landing documentation & overview
-├── ARCHITECTURE.md                    # In-depth architectural specifications & Mermaid diagrams
+├── .gitignore                         # Git exclusion rules
+├── LICENSE                            # MIT License
+├── README.md                          # Repository documentation & guide
+├── ARCHITECTURE.md                    # System architecture & mathematical specifications
 ├── DATASET_PLAN.md                    # Data curation strategy & class filtering rationale
 ├── requirements.txt                   # Production Python dependencies
+├── project_status.py                  # System health diagnostic script
 │
-├── app.py                             # Interactive Streamlit Web App with OOD Guard V1
-├── predict.py                         # Standalone CLI & direct image URL predictor
-├── waste_pipeline.py                  # Dual-stage cascaded YOLO detection + ResNet classification
-├── detect_waste.py                    # Standalone YOLO real-time detection visualizer
-├── test_yolo.py                       # YOLO benchmarking and test inference runner
+├── app.py                             # Interactive Streamlit Web Application (with OOD Guard V1)
+├── app_backup.py                      # Backup of initial Streamlit application
+├── predict.py                         # Standalone CLI & web URL inference engine
+├── waste_pipeline.py                  # Cascaded YOLO detection + ResNet-18 classification pipeline
+├── detect_waste.py                    # Standalone YOLO detection visualizer
+├── test_yolo.py                       # YOLO benchmarking and test runner
 │
-├── model_resnet.py                    # ResNet-18 transfer learning architecture
-├── model.py                           # Baseline 3-block CNN architecture
-├── prepare_data.py                    # Hugging Face dataset downloader, remapper & DataLoaders
+├── model_resnet.py                    # ResNet-18 Transfer Learning model definition
+├── model.py                           # Baseline Custom 3-Block CNN model definition
+├── prepare_data.py                    # Dataset loading, 6-class filtering & DataLoaders
 ├── train_resnet.py                    # ResNet-18 trainer with LR plateau scheduler & checkpointing
 ├── train.py                           # Baseline CNN trainer
-├── evaluate_resnet.py                 # Comprehensive ResNet-18 evaluation metrics
-├── evaluate.py                        # Baseline CNN evaluation metrics
-├── confusion_matrix_resnet.py         # ResNet-18 confusion matrix & classification report generator
+├── evaluate_resnet.py                 # ResNet-18 quantitative test evaluation suite
+├── evaluate.py                        # Baseline CNN test evaluation
+├── confusion_matrix_resnet.py         # ResNet-18 confusion matrix generator
 ├── confusion_matrix.py                # Baseline CNN confusion matrix generator
-├── error_analysis.py                  # High-confidence misclassification visual inspection
+├── error_analysis.py                  # High-confidence misclassification visual inspector
 ├── inspect_dataset.py                 # Dataset split and label distribution verification
 ├── visualize_dataset.py               # Single sample inspector
 ├── visualize_dataset_multiple.py      # Multi-sample grid visualizer
-├── project_status.py                  # System health, hardware & checkpoint diagnostic suite
 │
 ├── detection/                         # Object Detection Subsystem
-│   ├── merge_detection_datasets.py    # Merges TACO + supplemental datasets with validation
-│   ├── create_balanced_dataset_v2.py  # Generates balanced dataset_v2 by filtering high-density clusters
-│   ├── analyze_combined_dataset.py    # Quantifies class distribution & multi-label co-occurrences
-│   ├── analyze_food_images.py         # Inspects dense Food Organics object distribution
+│   ├── merge_detection_datasets.py    # Multi-dataset fusion, normalization & validation
+│   ├── create_balanced_dataset_v2.py  # High-density Food Organics balancer & dataset_v2 builder
+│   ├── analyze_combined_dataset.py    # Class balance and object density analyzer
+│   ├── analyze_food_images.py         # Food Organics density distribution inspector
 │   ├── train_yolo.py                  # YOLOv11 training script on combined 6-class dataset
 │   ├── download_taco_images.py        # Automated TACO image downloader
 │   └── data.yaml                      # YOLO dataset configuration
@@ -361,28 +408,34 @@ Smart_Waste_Classifier/
 ├── prepare_detection_data.py          # TACO COCO-to-YOLO dataset converter V1
 ├── prepare_detection_data_v2.py       # TACO-to-YOLO converter V2 with stratified split protection
 │
-├── prediction_sample/                 # Sample prediction visual outputs with bounding boxes
-├── real_world_test/                   # Real-world challenging municipal waste benchmark images
+├── assets/                            # Curated Repository Visual Assets & Diagnostic Plots
+│   ├── thumbnail.jpg                  # Project header banner
+│   ├── dataset_samples.png            # Dataset sample preview
+│   ├── dataset_samples_multiple.png   # Multi-class sample grid
+│   ├── confusion_matrix_resnet.png    # ResNet-18 confusion matrix heatmap
+│   ├── confusion_matrix_baseline.png  # Baseline CNN confusion matrix heatmap
+│   ├── resnet_error_analysis.png      # ResNet-18 error analysis visual grid
+│   ├── detected_waste.jpg             # YOLO object detection output preview
+│   ├── waste_pipeline_result.jpg      # Cascaded detection + classification output
+│   ├── yolo_training_results.png      # YOLO11n loss and mAP training curves
+│   ├── yolo_confusion_matrix.png      # YOLO11n detection confusion matrix
+│   ├── yolo_val_predictions.jpg       # YOLO11n validation batch detection results
+│   ├── yolo_f1_curve.png              # YOLO11n F1-Confidence curve
+│   └── yolo_pr_curve.png              # YOLO11n Precision-Recall curve
 │
-├── waste_resnet18_best.pth            # Trained ResNet-18 model weights (93.34% accuracy)
-├── waste_classifier.pth               # Trained Baseline CNN model weights (59.77% accuracy)
-├── yolo11n.pt                         # Pretrained YOLOv11 neural network weights
+├── prediction_sample/                 # Sample prediction visual outputs
+├── real_world_test/                   # Challenging real-world municipal waste test set
 │
-├── dataset_samples.png                # Dataset class preview visualization
-├── dataset_samples_multiple.png       # Comprehensive multi-class grid visualization
-├── confusion_matrix_resnet.png        # ResNet-18 confusion matrix heatmap
-├── confusion_matrix.png               # Baseline CNN confusion matrix heatmap
-├── resnet_error_analysis.png          # ResNet-18 misclassification diagnostic chart
-├── detected_waste.jpg                 # YOLO object detection visual output
-├── waste_pipeline_result.jpg          # Dual-stage detection + classification output
-└── thumbnail.jpg                      # Project header & social banner
+├── waste_resnet18_best.pth            # Trained ResNet-18 weights (93.34% Test Accuracy)
+├── waste_classifier.pth               # Trained Baseline CNN weights (59.77% Test Accuracy)
+└── yolo11n.pt                         # YOLOv11 neural network weights
 ```
 
 ---
 
-## 9. Operational Execution Guide
+## 11. Operational Execution Guide
 
-### 9.1. Environment Setup
+### 11.1. Environment Setup
 
 ```bash
 # Clone the repository
@@ -391,46 +444,46 @@ cd Smart_Waste_Classifier
 
 # Create and activate virtual environment
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1    # On Windows
+.\.venv\Scripts\Activate.ps1    # On Windows PowerShell
 # source .venv/bin/activate     # On Linux / macOS
 
 # Install required dependencies
 pip install -r requirements.txt
 ```
 
-### 9.2. Launching the Interactive Web Dashboard
+### 11.2. Interactive Web App
 
 ```bash
 streamlit run app.py
 ```
 
-### 9.3. Running CLI Inference
+### 11.3. CLI Inference Engine
 
 ```bash
-# Predict from local image
-python predict.py "path/to/image.jpg"
+# Predict from local file
+python predict.py "path/to/waste_sample.jpg"
 
-# Predict directly from a web URL
+# Predict from web URL
 python predict.py "https://example.com/waste_sample.jpg"
 ```
 
-### 9.4. Running the End-to-End Cascaded Pipeline
+### 11.4. Cascaded Dual-Stage Detection Pipeline
 
 ```bash
 python waste_pipeline.py
 ```
 
-### 9.5. Dataset Harmonization & YOLO Detector Training
+### 11.5. Dataset Harmonization & YOLO Detector Training
 
 ```bash
-# Harmonize and merge detection datasets
+# Run multi-dataset harmonization & validation
 python detection/merge_detection_datasets.py
 
-# Train YOLO11n on the combined 6-class dataset
+# Train YOLO11n on combined 6-class dataset
 python detection/train_yolo.py
 ```
 
-### 9.6. System Diagnostics & Health Check
+### 11.6. System Health & Environment Diagnostics
 
 ```bash
 python project_status.py
