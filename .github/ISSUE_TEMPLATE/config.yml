@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 System Architecture Documentation
+    url: https://github.com/Snigdha-0210/Smart_Waste_Classifier/blob/main/ARCHITECTURE.md
+    about: Read the in-depth architectural and benchmark specifications before filing an issue.
+  - name: 💡 Discussion & Ideas
+    url: https://github.com/Snigdha-0210/Smart_Waste_Classifier/discussions
+    about: Share community feedback, feature ideas, and show off custom deployments.

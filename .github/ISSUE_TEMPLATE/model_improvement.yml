@@ -1,0 +1,28 @@
+name: 🧠 Model & Dataset Improvement
+description: Propose improvements to dataset taxonomy, annotations, YOLO/ResNet training pipelines, or OOD benchmarks
+title: "[MODEL]: "
+labels: ["model-tuning", "dataset"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for proposals related to dataset re-balancing, class mapping refinements, loss functions, hyperparameter sweeps, or OOD benchmark additions.
+  - type: textarea
+    id: overview
+    attributes:
+      label: Improvement Overview
+      description: What specific model or dataset component is being targeted?
+      placeholder: e.g., Fine-tuning YOLOv11 with balanced multi-scale mosaic augmentations for small plastics...
+    validations:
+      required: true
+  - type: textarea
+    id: benchmark-impact
+    attributes:
+      label: Expected Benchmark Impact
+      description: How will this affect mAP50, Precision, Recall, F1-Score, or inference latency?
+      placeholder: Expected to improve Glass/Plastic precision from 88% to 92%+...
+  - type: textarea
+    id: dataset-details
+    attributes:
+      label: Dataset / Training Details
+      description: Details on source dataset, number of annotated instances, split ratios, or training hardware.

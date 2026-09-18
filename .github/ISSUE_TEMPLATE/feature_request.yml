@@ -1,0 +1,41 @@
+name: 💡 Feature Request
+description: Suggest a new idea, optimization, architectural improvement, or waste stream expansion
+title: "[FEATURE]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to improve Smart Waste Classifier? We'd love to hear it!
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Motivation
+      description: Is your feature request related to a problem or limitation?
+      placeholder: A clear description of what the limitation is...
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution / Feature
+      description: Describe the solution you'd like to see implemented.
+      placeholder: Detailed description of the feature or architectural enhancement...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or workarounds you've considered?
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Target Area
+      options:
+        - "Deep Learning Architecture (Backbones / Loss functions)"
+        - "Dataset Augmentations & Curation"
+        - "Edge Deployment & Model Quantization (ONNX / TensorRT)"
+        - "Streamlit Web UI / UX"
+        - "Eco-Guidance & Municipal Policy Data"
+        - "Testing & CI/CD"

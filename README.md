@@ -5,6 +5,7 @@
 
 ![Project Banner](assets/thumbnail.jpg)
 
+[![CI](https://github.com/Snigdha-0210/Smart_Waste_Classifier/actions/workflows/ci.yml/badge.svg)](https://github.com/Snigdha-0210/Smart_Waste_Classifier/actions)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C.svg?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![Ultralytics YOLO11](https://img.shields.io/badge/YOLO-11n_Detector-00FFFF.svg?style=for-the-badge&logo=yolo&logoColor=black)](https://github.com/ultralytics/ultralytics)
@@ -13,6 +14,7 @@
 [![ResNet-18](https://img.shields.io/badge/Model-ResNet18-success.svg?style=for-the-badge&logo=deepnote&logoColor=white)](https://pytorch.org/vision/main/models/resnet.html)
 [![Accuracy](https://img.shields.io/badge/Test_Accuracy-93.34%25-brightgreen.svg?style=for-the-badge&logo=checkmarx&logoColor=white)](#-model-benchmarks--performance)
 [![CUDA](https://img.shields.io/badge/Hardware-CUDA_Accelerated-76B900.svg?style=for-the-badge&logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-zone)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=for-the-badge)](CONTRIBUTING.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
@@ -498,13 +500,13 @@ Smart_Waste_Classifier/
 
 ## 🤝 Contributing
 
-Contributions are welcome! If you'd like to improve the model, add features, or refine the web app:
+Contributions are welcome! If you'd like to improve the model, expand the dataset, or refine the web dashboard:
 
-1. Fork the project repository.
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`).
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`).
-4. Push to the branch (`git push origin feature/AmazingFeature`).
-5. Open a Pull Request.
+1. Read our [**Contributing Guidelines**](CONTRIBUTING.md) for environment setup, code style, and test commands.
+2. Review our [**Code of Conduct**](CODE_OF_CONDUCT.md) and [**Security Policy**](SECURITY.md).
+3. Fork the repository and create your branch (`git checkout -b feature/AmazingFeature`).
+4. Run unit tests (`pytest tests/ -v`) to ensure all tests pass.
+5. Open a Pull Request using the [PR Template](.github/PULL_REQUEST_TEMPLATE.md).
 
 ---
 

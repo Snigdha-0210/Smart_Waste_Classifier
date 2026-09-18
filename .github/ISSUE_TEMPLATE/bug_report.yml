@@ -1,0 +1,62 @@
+name: 🐛 Bug Report
+description: Report an issue or unexpected behavior in model inference, web dashboard, or dataset processing
+title: "[BUG]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please provide as much detail as possible to help reproduce and resolve it quickly.
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe the problem...
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which part of the system is experiencing the issue?
+      options:
+        - "Streamlit Web App (app.py)"
+        - "ResNet-18 Classification Pipeline (predict.py / model_resnet.py)"
+        - "YOLOv11 Detection Pipeline (detect_waste.py / test_yolo.py)"
+        - "OOD Guard V1 Uncertainty Filtering"
+        - "Dataset Preparation & Merging"
+        - "CLI / URL Inference"
+        - "Other"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this bug?
+      placeholder: |
+        1. Run command '...'
+        2. Upload image '...'
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Terminal Logs / Error Traceback
+      description: Please copy and paste any terminal output or stack trace.
+      render: shell
+  - type: input
+    id: environment
+    attributes:
+      label: Environment Info
+      description: OS version, Python version, PyTorch version, CUDA version (if applicable).
+      placeholder: "Windows 11 / Python 3.10 / PyTorch 2.1.2 / CUDA 12.1"
