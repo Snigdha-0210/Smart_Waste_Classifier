@@ -399,9 +399,14 @@ Smart_Waste_Classifier/
 ├── detection/                         # Object Detection Subsystem
 │   ├── merge_detection_datasets.py    # Multi-dataset fusion, normalization & validation
 │   ├── create_balanced_dataset_v2.py  # High-density Food Organics balancer & dataset_v2 builder
+│   ├── create_final_v4_dataset.py     # 10-Class Synthetic V4 dataset builder & YAML generator
+│   ├── create_mixed_v5_dataset.py     # Mixed V5 dataset builder (Synthetic + Real-world subset)
+│   ├── create_mixed_v6_dataset.py     # Balanced Mixed V6 dataset builder (10-class fusion)
 │   ├── analyze_combined_dataset.py    # Class balance and object density analyzer
 │   ├── analyze_food_images.py         # Food Organics density distribution inspector
 │   ├── train_yolo.py                  # YOLOv11 training script on combined 6-class dataset
+│   ├── train_yolo_v4.py               # YOLOv11 training script on 10-class V4 dataset
+│   ├── train_yolo_v6.py               # YOLOv11 training script on balanced 10-class V6 dataset
 │   ├── download_taco_images.py        # Automated TACO image downloader
 │   └── data.yaml                      # YOLO dataset configuration
 │
