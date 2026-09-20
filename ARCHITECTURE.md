@@ -212,6 +212,25 @@ In organic waste datasets, photographs of compost heaps frequently contain 40–
 
 ---
 
+### 4.4. 10-Class Synthetic V4 Dataset Builder (`create_final_v4_dataset.py`) & Training (`train_yolo_v4.py`)
+
+To expand beyond household recyclable items into industrial and hazardous waste streams, the V4 pipeline integrates the **Synthetic Outdoor Waste YOLO Dataset (`SynWasteNet`)**:
+- **Expanded Taxonomy (10 Classes)**:
+  `0: Cardboard`, `1: Food Organics`, `2: Glass`, `3: Metal`, `4: Paper`, `5: Plastic`, `6: Battery`, `7: E-Waste`, `8: Cloth/Textile`, `9: Other Waste`.
+- **Automated Verification**: Generates standard `data.yaml`, counts split label frequencies, and verifies non-empty bounding box coordinate distributions.
+- **Training Strategy (`train_yolo_v4.py`)**: 80 epochs, $640\times 640$ resolution, batch size 16, AMP enabled, patience 20 with dynamic checkpoint saving on RTX 4060 GPU.
+
+---
+
+### 4.5. Multi-Source Mixed V5 & V6 Dataset Builders (`create_mixed_v5_dataset.py`, `create_mixed_v6_dataset.py`, `train_yolo_v6.py`)
+
+To bridge domain gaps between pure synthetic renders and complex real-world solid waste scenes:
+- **V5 Dataset Merger**: Combines V4 synthetic data with a controlled subset ($\le 1,500$ images) of real-world V3 waste data.
+- **V6 Dataset Harmonizer**: Performs stratified class balancing across 10 classes, prefixing images to prevent filename collisions and equalizing minority classes (`Battery`, `E-Waste`, `Cloth/Textile`).
+- **Mixed Training Pipeline (`train_yolo_v6.py`)**: Trains YOLO11n on the blended synthetic-real dataset to ensure high generalization in open-world municipal sorting environments.
+
+---
+
 ## 5. Deep Learning Core & Model Specifications
 
 ### 5.1. Pretrained ResNet-18 Transfer Learning Classifier
